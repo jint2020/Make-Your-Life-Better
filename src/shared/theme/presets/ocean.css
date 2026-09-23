@@ -1,0 +1,43 @@
+/* 海湾蓝：tweakcn 格式（从 tweakcn.com 的 Code 面板复制 :root / .dark 即可替换） */
+:root {
+  --background: oklch(0.99 0.004 240);
+  --foreground: oklch(0.21 0.03 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.03 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.03 255);
+  --primary: oklch(0.55 0.17 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.95 0.02 240);
+  --secondary-foreground: oklch(0.3 0.05 255);
+  --muted: oklch(0.96 0.01 240);
+  --muted-foreground: oklch(0.52 0.03 255);
+  --accent: oklch(0.93 0.04 235);
+  --accent-foreground: oklch(0.3 0.08 255);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.9 0.015 240);
+  --input: oklch(0.9 0.015 240);
+  --ring: oklch(0.55 0.17 250);
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: oklch(0.17 0.02 255);
+  --foreground: oklch(0.96 0.01 240);
+  --card: oklch(0.21 0.025 255);
+  --card-foreground: oklch(0.96 0.01 240);
+  --popover: oklch(0.21 0.025 255);
+  --popover-foreground: oklch(0.96 0.01 240);
+  --primary: oklch(0.68 0.15 245);
+  --primary-foreground: oklch(0.16 0.03 255);
+  --secondary: oklch(0.27 0.03 255);
+  --secondary-foreground: oklch(0.94 0.01 240);
+  --muted: oklch(0.26 0.025 255);
+  --muted-foreground: oklch(0.7 0.03 245);
+  --accent: oklch(0.3 0.05 250);
+  --accent-foreground: oklch(0.95 0.01 240);
+  --destructive: oklch(0.68 0.19 22);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.68 0.15 245);
+}

@@ -1,0 +1,16 @@
+/* 差异语义色：只随深浅色切换，不受主题预设影响 */
+.ag-cell.mylb-cell-diff {
+  background-color: var(--diff-changed-bg);
+  color: var(--diff-changed-fg);
+  font-weight: 500;
+}
+.ag-cell.mylb-cell-missing {
+  background-color: var(--diff-missing-bg);
+  color: var(--diff-missing-fg);
+}
+.ag-header-group-cell.mylb-file-group {
+  font-weight: 600;
+}
+.ag-cell.mylb-key-cell {
+  font-family: var(--font-mono);
+}

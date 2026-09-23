@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content="浏览器里的提效工具集，数据只在本机处理" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Make Your Life Better</title>
+    <script>
+      // 首屏主题：在 React 挂载前设好深浅色和主题预设，避免闪烁。
+      // key 与 src/shared/theme/constants.ts 保持一致。
+      ;(function () {
+        try {
+          var s = JSON.parse(localStorage.getItem('mylb:theme') || '{}')
+          var mode = s.mode || 'system'
+          var dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+          var css = localStorage.getItem('mylb:theme-css')
+          if (css && s.presetId && s.presetId !== 'default') {
+            var el = document.createElement('style')
+            el.id = 'mylb-theme-preset'
+            el.textContent = css
+            document.head.appendChild(el)
+            document.documentElement.setAttribute('data-theme-preset', s.presetId)
+          }
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

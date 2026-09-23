@@ -1,0 +1,33 @@
+/** Excel 对比工具的界面文案 */
+export const t = {
+  title: 'Excel 数据对比',
+  subtitle: '上传 2～3 个 xlsx / csv 文件，按主键匹配后逐字段对比差异。',
+  steps: ['上传文件', '选择工作表', '配置字段', '查看结果'] as const,
+  stepPlaceholder: '这一步正在开发中',
+  stepPlans: [
+    ['拖拽或选择 2～3 个 xlsx / csv 文件', 'CSV 自动识别 UTF-8 / GBK 编码，可手动切换', '文件只在浏览器里解析，不会上传'],
+    ['每个文件选择一个工作表', '指定表头所在行，合并单元格自动向下填充', '空列名、重名列自动重命名，空表直接提示'],
+    ['选择主键（支持组合主键），同名列自动配对', '选择对比字段和附带展示列，不同名的列手动映射', '设置归一化选项：忽略大小写、全角转半角、保留前导零'],
+  ] as const,
+  demoTitle: '先用示例数据看看结果页',
+  demoBody: '真实的解析和对比引擎还在开发中。示例数据由 Worker 生成，可以用来检查表格性能和主题效果。',
+  demoButton: (rows: string, files: number) => `${rows} 行 × ${files} 个文件`,
+  generating: '正在生成…',
+  back: '返回上一步',
+  restart: '重新开始',
+  summary: {
+    all: '全部',
+    diff: '有差异',
+    missing: '有缺失',
+    equal: '全部一致',
+    duplicateKey: '主键重复',
+    emptyKey: '主键为空',
+    overlapHint: '一行可能同时属于多类',
+  },
+  keySearch: '搜索主键…',
+  onlyDiffColumns: '只显示有差异的列',
+  statusCol: '状态',
+  missingIn: (letter: string) => `缺 ${letter}`,
+  elapsed: (ms: number, rows: number) => `${rows.toLocaleString()} 行 · 用时 ${ms.toFixed(0)} ms`,
+  missingCell: '—',
+}
