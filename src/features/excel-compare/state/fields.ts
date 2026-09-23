@@ -105,3 +105,40 @@ export function toCompareConfig(fileIds: string[], rows: FieldRow[], normalize: 
     normalize,
   }
 }
+
+/** 批量设置能用的用途：不包括主键（主键只能逐行设） */
+export type BulkRole = Exclude<FieldRole, 'key'>
+
+export interface BulkResult {
+  rows: FieldRow[]
+  /** 设置成目标用途的字段数 */
+  applied: number
+  /** 保持不动的主键字段数 */
+  keptKeys: number
+  /** 设为"对比"时，因为只在一个文件里出现而跳过的字段数 */
+  skippedSingle: number
+}
+
+/**
+ * 把所有非主键字段设成同一个用途。
+ * - 主键行不改
+ * - 设为"对比"时，只在一个文件里出现的字段没法比，保持原来的用途
+ */
+export function applyBulkRole(rows: FieldRow[], role: BulkRole): BulkResult {
+  let applied = 0
+  let keptKeys = 0
+  let skippedSingle = 0
+  const next = rows.map((r) => {
+    if (r.role === 'key') {
+      keptKeys++
+      return r
+    }
+    if (role === 'compare' && r.columns.filter((c) => c != null).length < 2) {
+      skippedSingle++
+      return r
+    }
+    applied++
+    return r.role === role ? r : { ...r, role }
+  })
+  return { rows: next, applied, keptKeys, skippedSingle }
+}

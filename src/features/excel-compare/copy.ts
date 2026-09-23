@@ -41,10 +41,20 @@ export const t = {
     title: '字段映射',
     desc: '同名的列已经自动配对。列名不一样的（比如"工号"和"员工编号"），在对应文件的下拉框里手动选。',
     colField: '字段',
-    colRole: '用途',
     none: '（无）',
     roles: { key: '主键', compare: '对比', display: '只展示', ignore: '忽略' },
-    roleHelp: '主键：用来匹配同一条记录，可以选多个组成组合主键。对比：逐个比较各文件的值。只展示：放在结果里方便辨认，不比较。',
+    bulkPlaceholder: '批量设置用途',
+    bulkLabel: '批量设置所有非主键字段的用途',
+    bulkDone: (applied: number, role: string, keptKeys: number, skippedSingle: number) => {
+      const notes = [
+        keptKeys > 0 ? '主键未改动' : '',
+        skippedSingle > 0 ? `跳过 ${skippedSingle} 个只在一个文件中出现的字段` : '',
+      ].filter(Boolean)
+      const head = applied > 0 ? `已将 ${applied} 个字段设为${role}` : `没有可以设为${role}的字段`
+      return notes.length ? `${head}（${notes.join('；')}）` : head
+    },
+    undo: '撤销',
+    roleHelp: '主键：用来匹配同一条记录，可以选多个组成组合主键。对比：逐个比较各文件的值。只展示：放在结果里方便辨认，不比较。字段多时，可以先在"用途"列表头批量设置，再逐行微调。',
     normalizeTitle: '比较规则',
     normalizeDefault: '始终生效：去掉首尾空格；空单元格和 "null" 视为相同；数字按数值比较（1 = 1.0 = 1,000 这类写法）；日期统一成年-月-日再比较。',
     ignoreCase: '忽略大小写',

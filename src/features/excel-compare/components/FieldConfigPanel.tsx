@@ -1,17 +1,19 @@
-import { AlertTriangleIcon, InfoIcon } from 'lucide-react'
+import { AlertTriangleIcon, CheckCircle2Icon, InfoIcon, Undo2Icon } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { t } from '../copy'
 import type { NormalizeOptions } from '../engine/types'
-import { validateFieldRows, type FieldRole, type FieldRow } from '../state/fields'
+import { validateFieldRows, type BulkRole, type FieldRole, type FieldRow } from '../state/fields'
 import { useCompareStore } from '../state/store'
 import { FileBadge } from './FileBadge'
 
 const ROLE_ORDER: FieldRole[] = ['key', 'compare', 'display', 'ignore']
+const BULK_ROLES: BulkRole[] = ['compare', 'display', 'ignore']
 
 const ROLE_ROW_CLASS: Record<FieldRole, string> = {
   key: 'bg-primary/5',
@@ -66,6 +68,55 @@ function FieldRowView({ row, headers }: { row: FieldRow; headers: string[][] }) 
   )
 }
 
+/** "用途"列表头：把所有非主键字段一次设成同一个用途 */
+function BulkRoleSelect() {
+  const bulkSetRole = useCompareStore((s) => s.bulkSetRole)
+  return (
+    <NativeSelect
+      size="sm"
+      className="w-32 font-normal text-foreground"
+      value=""
+      aria-label={t.fields.bulkLabel}
+      title={t.fields.bulkLabel}
+      onChange={(e) => {
+        if (e.target.value) bulkSetRole(e.target.value as BulkRole)
+      }}
+    >
+      <option value="" disabled>
+        {t.fields.bulkPlaceholder}
+      </option>
+      {BULK_ROLES.map((r) => (
+        <option key={r} value={r}>
+          {t.fields.roles[r]}
+        </option>
+      ))}
+    </NativeSelect>
+  )
+}
+
+function BulkNotice() {
+  const lastBulk = useCompareStore((s) => s.lastBulk)
+  const undoBulk = useCompareStore((s) => s.undoBulk)
+  if (!lastBulk) return null
+  const { applied, keptKeys, skippedSingle } = lastBulk.result
+  return (
+    <div
+      role="status"
+      data-testid="bulk-notice"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-muted/40 px-3 py-2 text-sm"
+    >
+      <CheckCircle2Icon className="size-4 shrink-0 text-diff-equal-fg" />
+      <span className="flex-1">
+        {t.fields.bulkDone(applied, t.fields.roles[lastBulk.role], keptKeys, skippedSingle)}
+      </span>
+      <Button variant="outline" size="sm" className="h-7" onClick={undoBulk}>
+        <Undo2Icon />
+        {t.fields.undo}
+      </Button>
+    </div>
+  )
+}
+
 function NormalizeOptionsView() {
   const normalize = useCompareStore((s) => s.normalize)
   const setNormalize = useCompareStore((s) => s.setNormalize)
@@ -114,7 +165,9 @@ export function FieldConfigPanel() {
             <thead className="border-b bg-muted/60 text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">{t.fields.colField}</th>
-                <th className="px-3 py-2 font-medium">{t.fields.colRole}</th>
+                <th className="px-3 py-1.5 font-medium">
+                  <BulkRoleSelect />
+                </th>
                 {files.map((f, i) => (
                   <th key={f.fileId} className="px-3 py-2 font-medium">
                     <span className="flex items-center gap-1.5">
@@ -132,6 +185,7 @@ export function FieldConfigPanel() {
             </tbody>
           </table>
         </div>
+        <BulkNotice />
         {errors.length > 0 && (
           <Alert variant="destructive">
             <AlertTriangleIcon />

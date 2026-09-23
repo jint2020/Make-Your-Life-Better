@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFieldRows, validateFieldRows } from './fields'
+import { applyBulkRole, buildFieldRows, validateFieldRows } from './fields'
 
 describe('buildFieldRows', () => {
   it('同名列自动配对，没配上的追加，猜主键', () => {
@@ -49,5 +49,36 @@ describe('validateFieldRows', () => {
     const v = validateFieldRows([{ id: 'a', label: '工号', role: 'key', columns: ['工号', '工号'] }])
     expect(v.errors).toEqual([])
     expect(v.hints[0]).toMatch(/只会比较/)
+  })
+})
+
+describe('applyBulkRole', () => {
+  const rows = buildFieldRows([
+    ['工号', '姓名', '部门', '备注'],
+    ['工号', '姓名', '部门'],
+  ])
+
+  it('全部设为忽略：主键不动', () => {
+    const r = applyBulkRole(rows, 'ignore')
+    expect(r.rows.map((x) => x.role)).toEqual(['key', 'ignore', 'ignore', 'ignore'])
+    expect(r).toMatchObject({ applied: 3, keptKeys: 1, skippedSingle: 0 })
+  })
+
+  it('全部设为对比：跳过只在一个文件里出现的字段', () => {
+    const ignored = applyBulkRole(rows, 'ignore').rows
+    const r = applyBulkRole(ignored, 'compare')
+    expect(r.rows.map((x) => x.role)).toEqual(['key', 'compare', 'compare', 'ignore'])
+    expect(r).toMatchObject({ applied: 2, keptKeys: 1, skippedSingle: 1 })
+  })
+
+  it('全部设为只展示：只在一个文件里的字段也可以', () => {
+    const r = applyBulkRole(rows, 'display')
+    expect(r.rows.map((x) => x.role)).toEqual(['key', 'display', 'display', 'display'])
+  })
+
+  it('不修改原数组（撤销要用）', () => {
+    const before = rows.map((x) => x.role)
+    applyBulkRole(rows, 'ignore')
+    expect(rows.map((x) => x.role)).toEqual(before)
   })
 })

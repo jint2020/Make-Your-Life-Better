@@ -9,10 +9,13 @@ import type { CsvEncoding } from '../parse/encoding'
 import type { FileKind, SheetInfo, TableSummary } from '../parse/types'
 import { compareWorker } from '../worker/client'
 import {
+  applyBulkRole,
   buildFieldRows,
   headersSignature,
   toCompareConfig,
   validateFieldRows,
+  type BulkResult,
+  type BulkRole,
   type FieldRow,
 } from './fields'
 
@@ -21,6 +24,13 @@ export const MAX_FILES = 3
 export const LARGE_FILE_BYTES = 50 * 1024 * 1024
 
 export type Step = 0 | 1 | 2 | 3
+
+/** 最近一次批量设置：用于显示结果提示和撤销 */
+export interface LastBulk {
+  role: BulkRole
+  result: Omit<BulkResult, 'rows'>
+  prevRows: FieldRow[]
+}
 
 export interface SourceFile {
   fileId: string
@@ -49,6 +59,7 @@ interface State {
   notice: string | null
   fieldRows: FieldRow[]
   fieldsSignature: string
+  lastBulk: LastBulk | null
   normalize: NormalizeOptions
   extracting: boolean
   comparing: boolean
@@ -68,6 +79,8 @@ interface Actions {
   extractAll(): Promise<boolean>
   updateField(id: string, patch: Partial<Omit<FieldRow, 'id'>>): void
   updateFieldColumn(id: string, fileIndex: number, column: string | null): void
+  bulkSetRole(role: BulkRole): void
+  undoBulk(): void
   setNormalize(patch: Partial<NormalizeOptions>): void
   runCompare(): Promise<boolean>
   reset(): void
@@ -79,6 +92,7 @@ const initialState: State = {
   notice: null,
   fieldRows: [],
   fieldsSignature: '',
+  lastBulk: null,
   normalize: DEFAULT_NORMALIZE_OPTIONS,
   extracting: false,
   comparing: false,
@@ -205,7 +219,7 @@ export const useCompareStore = create<State & Actions>()((set, get) => {
         const headers = get().files.map((f) => f.table!.headers)
         const signature = headersSignature(headers)
         if (signature !== get().fieldsSignature) {
-          set({ fieldRows: buildFieldRows(headers), fieldsSignature: signature })
+          set({ fieldRows: buildFieldRows(headers), fieldsSignature: signature, lastBulk: null })
         }
         set({ step: 2 })
       }
@@ -213,8 +227,12 @@ export const useCompareStore = create<State & Actions>()((set, get) => {
       return allOk
     },
 
+    // 逐行修改后，批量设置的提示和撤销失效（避免撤销时覆盖手动改过的内容）
     updateField(id, patch) {
-      set((s) => ({ fieldRows: s.fieldRows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }))
+      set((s) => ({
+        fieldRows: s.fieldRows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+        lastBulk: null,
+      }))
     },
 
     updateFieldColumn(id, fileIndex, column) {
@@ -222,7 +240,19 @@ export const useCompareStore = create<State & Actions>()((set, get) => {
         fieldRows: s.fieldRows.map((r) =>
           r.id === id ? { ...r, columns: r.columns.map((c, i) => (i === fileIndex ? column : c)) } : r,
         ),
+        lastBulk: null,
       }))
+    },
+
+    bulkSetRole(role) {
+      const prevRows = get().fieldRows
+      const { rows, ...result } = applyBulkRole(prevRows, role)
+      set({ fieldRows: rows, lastBulk: { role, result, prevRows } })
+    },
+
+    undoBulk() {
+      const { lastBulk } = get()
+      if (lastBulk) set({ fieldRows: lastBulk.prevRows, lastBulk: null })
     },
 
     setNormalize: (patch) => set((s) => ({ normalize: { ...s.normalize, ...patch } })),

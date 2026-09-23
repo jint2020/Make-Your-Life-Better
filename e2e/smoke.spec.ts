@@ -92,9 +92,26 @@ test('示例文件：大标题、列名不一致、主键重复/为空', async (
   await expect(page.getByLabel('工号 在文件 2 中对应的列')).toHaveValue('员工编号')
   await expect(page.getByLabel('工号 的用途')).toHaveValue('key')
 
-  // 把"岗位"改成只展示，验证手动调整
-  await page.getByLabel('岗位 的用途').selectOption('display')
+  // 批量设置：全部忽略（主键不动）→ 撤销 → 恢复原样
+  const roleOf = (label: string) => page.getByLabel(`${label} 的用途`)
+  const bulk = page.getByLabel('批量设置所有非主键字段的用途')
+  await bulk.selectOption('ignore')
+  await expect(page.getByTestId('bulk-notice')).toContainText('已将 5 个字段设为忽略（主键未改动）')
+  await expect(roleOf('工号')).toHaveValue('key')
+  for (const f of ['姓名', '部门', '岗位', '入职日期', '学分']) await expect(roleOf(f)).toHaveValue('ignore')
+  await expect(bulk).toHaveValue('')
+  await page.getByRole('button', { name: '撤销' }).click()
+  await expect(page.getByTestId('bulk-notice')).toBeHidden()
+  await expect(roleOf('姓名')).toHaveValue('compare')
+
+  // 再批量忽略，然后逐行挑要比的字段；手动修改后提示消失
+  await bulk.selectOption('ignore')
+  await roleOf('部门').selectOption('compare')
+  await roleOf('学分').selectOption('compare')
+  await expect(page.getByTestId('bulk-notice')).toBeHidden()
+  await roleOf('岗位').selectOption('display')
   await page.getByRole('button', { name: '开始对比' }).click()
+  await expect(page.getByTestId('result-grid').locator('.ag-header-cell-text', { hasText: '姓名' })).toHaveCount(0)
 
   await expect(await chip(page, '主键重复')).toContainText('4')
   await expect(await chip(page, '主键为空')).toContainText('1')
