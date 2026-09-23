@@ -6,7 +6,7 @@
 
 ## 技术栈
 
-Vite 8 · React 19 · TypeScript（strict）· Tailwind v4 · shadcn/ui（Radix）· tweakcn 主题 · React Router 8 · AG Grid Community 36 · Comlink（Worker）· idb（IndexedDB）· Vitest · Playwright
+Vite 8 · React 19 · TypeScript（strict）· zustand · SheetJS 0.20 · PapaParse · Tailwind v4 · shadcn/ui（Radix）· tweakcn 主题 · React Router 8 · AG Grid Community 36 · Comlink（Worker）· idb（IndexedDB）· Vitest · Playwright
 
 ## 开发
 
@@ -20,12 +20,14 @@ pnpm lint         # oxlint
 pnpm build
 ```
 
-### 下一步需要安装 SheetJS
+### 关于 SheetJS（xlsx 解析）
 
-解析 xlsx 用 SheetJS 0.20.3。它只在官方 CDN 发布，npm 上的 `xlsx` 还停在 0.18.5，而且有已知漏洞，不要用那个版本：
+`package.json` 里的 `xlsx` 指向 SheetJS 官方 CDN 的 0.20.3 版本。npm 上的 `xlsx` 还停在 0.18.5，有已知漏洞，不要用那个版本。
+
+如果公司网络访问不了 `cdn.sheetjs.com`，可以改用 npm 上的社区镜像包（内容相同，但不是官方发布）：
 
 ```bash
-pnpm add https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+pnpm add xlsx@npm:@e965/xlsx@0.20.3
 ```
 
 ## 目录结构
@@ -41,12 +43,13 @@ src/
     worker/             Worker 客户端（Comlink）
   features/
     excel-compare/      工具一：Excel 数据对比
-      engine/           对比引擎（纯函数，含单测）
-      parse/            表头清洗、CSV 编码检测（含单测）
-      worker/           对比 Worker
+      engine/           对比引擎：归一化、主键匹配、逐字段比较（纯函数，含单测和性能测试）
+      parse/            xlsx / csv 解析、合并单元格、表头清洗、编码检测（含单测）
+      state/            向导状态（zustand）和字段映射逻辑
+      worker/           Worker：文件、网格、表格都留在 Worker 里，主线程只拿预览和结果
       grid/             AG Grid 结果表
-      components/       步骤条、汇总条、结果视图
-      demo/             示例数据生成
+      components/       向导各步骤、配置抽屉、行详情、未参与对比的行
+      sample/           示例文件生成（也用于 E2E 测试）
   tools.registry.ts     工具注册表
 ```
 

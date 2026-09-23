@@ -15,10 +15,13 @@ export function columnLetter(index: number): string {
   return s
 }
 
-export function normalizeHeaders(raw: readonly unknown[]): string[] {
+/**
+ * @param columnIndexes 每个表头对应的原始列号（丢掉空列后仍按原列字母命名）；不传时按下标
+ */
+export function normalizeHeaders(raw: readonly unknown[], columnIndexes?: readonly number[]): string[] {
   const base = raw.map((h, i) => {
     const s = h == null ? '' : String(h).trim()
-    return s === '' ? `列${columnLetter(i)}` : s
+    return s === '' ? `列${columnLetter(columnIndexes?.[i] ?? i)}` : s
   })
 
   const used = new Set<string>()

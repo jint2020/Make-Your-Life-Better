@@ -22,8 +22,18 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n)
 }
 
+// 日期的取值种类通常很少，缓存格式化结果能省下大量字符串拼接
+const dateCache = new Map<number, string>()
+
 export function formatDate(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  const t = d.getTime()
+  let s = dateCache.get(t)
+  if (s === undefined) {
+    s = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+    if (dateCache.size > 50_000) dateCache.clear()
+    dateCache.set(t, s)
+  }
+  return s
 }
 
 export function toHalfWidth(s: string): string {
@@ -38,6 +48,7 @@ export function toHalfWidth(s: string): string {
 }
 
 function canonicalNumber(n: number): string {
+  if (Number.isSafeInteger(n)) return String(n)
   if (!Number.isFinite(n)) return String(n)
   // 消除浮点噪声：0.1 + 0.2 → 0.3
   return String(Number.parseFloat(n.toPrecision(15)))
@@ -63,6 +74,12 @@ export function normalizeValue(value: CellValue | undefined, opts: NormalizeOpti
   let s = opts.fullToHalf ? toHalfWidth(value) : value
   s = s.trim()
   if (s === '' || s.toLowerCase() === 'null') return EMPTY
+
+  // 快速路径：不是数字 / 符号 / 小数点开头的，不可能是数字或日期，跳过正则
+  const c0 = s.charCodeAt(0)
+  if (!((c0 >= 48 && c0 <= 57) || c0 === 43 || c0 === 45 || c0 === 46)) {
+    return opts.ignoreCase ? s.toLowerCase() : s
+  }
 
   const date = DATE_RE.exec(s)
   if (date) {

@@ -14,6 +14,8 @@ export interface ParsedTable {
   sheetName: string
   headers: string[]
   columns: CellValue[][]
+  /** 每条数据在原表里的行号（从 1 开始），用于提示"第几行主键重复" */
+  rowNumbers: Int32Array
   rowCount: number
 }
 
@@ -80,10 +82,26 @@ export const TAG_MISSING = 4
  * 表格的 rowData 只放行号 { i }，各列通过 valueGetter 读下面这些数组，
  * 这样 10 万行也不用在主线程上创建 10 万个大对象。
  */
+export interface ExcludedRow {
+  fileIndex: number
+  /** 原表行号（从 1 开始） */
+  rowNumber: number
+  keyText: string
+  reason: ExcludedReason
+  /** 主键重复时：在哪些文件里重复 */
+  duplicateIn?: number[]
+}
+
 export interface CompareResult {
   files: { fileId: string; fileName: string }[]
   keyLabel: string
   fieldLabels: string[]
+  /** 附带展示列：只展示不比较，取第一个有这条记录的文件的值 */
+  displayLabels: string[]
+  /** displayValues[field][row] */
+  displayValues: (string | null)[][]
+  /** 主键重复 / 为空、不参与对比的行 */
+  excluded: ExcludedRow[]
   /** 每行主键的展示文本 */
   keys: string[]
   /** 每行标签位掩码（TAG_*） */
