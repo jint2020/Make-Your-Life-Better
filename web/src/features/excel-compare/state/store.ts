@@ -25,6 +25,28 @@ export const LARGE_FILE_BYTES = 50 * 1024 * 1024
 
 export type Step = 0 | 1 | 2 | 3
 
+/**
+ * 保存到云端的任务配置（和原始文件一起上传）。打开时重新解析、重新对比，结果不存。
+ * 改结构时升 version，并在 restore 里兼容旧版本。
+ */
+export interface SavedCompareConfig {
+  version: 1
+  files: { name: string; sheetName: string; headerRow: number; encodingMode: 'auto' | CsvEncoding }[]
+  fieldRows: FieldRow[]
+  fieldsSignature: string
+  normalize: NormalizeOptions
+}
+
+/**
+ * 原始文件：解析都在 Worker 里，但保存到云端要上传原件，所以主线程留一份引用（File 本身不占内存）。
+ * 不放进 zustand 状态，避免触发渲染。
+ */
+const originals = new Map<string, File>()
+
+export function getOriginalFile(fileId: string): File | undefined {
+  return originals.get(fileId)
+}
+
 /** 最近一次批量设置：用于显示结果提示和撤销 */
 export interface LastBulk {
   role: BulkRole
@@ -68,7 +90,8 @@ interface State {
 }
 
 interface Actions {
-  addFiles(files: File[]): void
+  /** 返回的 Promise 在所有文件读取完成后 resolve */
+  addFiles(files: File[]): Promise<void>
   removeFile(fileId: string): void
   loadSample(rowCount: number, fileCount: 2 | 3): Promise<void>
   setSheet(fileId: string, sheetName: string): Promise<void>
@@ -83,6 +106,10 @@ interface Actions {
   undoBulk(): void
   setNormalize(patch: Partial<NormalizeOptions>): void
   runCompare(): Promise<boolean>
+  /** 当前任务的配置，用于保存到云端 */
+  snapshot(): SavedCompareConfig | null
+  /** 用保存的原始文件和配置恢复任务，并直接跑出结果。失败时停在出问题的那一步 */
+  restore(files: File[], saved: SavedCompareConfig): Promise<boolean>
   reset(): void
 }
 
@@ -162,20 +189,21 @@ export const useCompareStore = create<State & Actions>()((set, get) => {
         sheetLoading: false,
         table: null,
       }))
+      added.forEach((f, i) => originals.set(f.fileId, accepted[i]!))
       set({ files: [...files, ...added], notice, result: null })
-      added.forEach((f, i) => void inspect(f.fileId, accepted[i]!))
+      return Promise.all(added.map((f, i) => inspect(f.fileId, accepted[i]!))).then(() => {})
     },
 
     removeFile(fileId) {
       void worker().disposeFile(fileId)
+      originals.delete(fileId)
       set((s) => ({ files: s.files.filter((f) => f.fileId !== fileId), notice: null, result: null }))
     },
 
     async loadSample(rowCount, fileCount) {
-      get().files.forEach((f) => void worker().disposeFile(f.fileId))
-      set({ ...initialState })
+      get().reset()
       const samples = await worker().makeSampleFiles(rowCount, fileCount)
-      get().addFiles(samples.map((s) => new File([s.bytes as BlobPart], s.name, { type: s.type })))
+      await get().addFiles(samples.map((s) => new File([s.bytes as BlobPart], s.name, { type: s.type })))
     },
 
     setSheet: (fileId, sheetName) => loadSheetInfo(fileId, sheetName),
@@ -284,8 +312,50 @@ export const useCompareStore = create<State & Actions>()((set, get) => {
       }
     },
 
+    snapshot() {
+      const { files, fieldRows, fieldsSignature, normalize } = get()
+      if (files.some((f) => !f.sheetName || f.headerRow == null)) return null
+      return {
+        version: 1,
+        files: files.map((f) => ({
+          name: f.name,
+          sheetName: f.sheetName!,
+          headerRow: f.headerRow!,
+          encodingMode: f.encodingMode,
+        })),
+        fieldRows,
+        fieldsSignature,
+        normalize,
+      }
+    },
+
+    async restore(files, saved) {
+      get().reset()
+      await get().addFiles(files)
+      const current = get().files
+      if (current.length !== saved.files.length || current.some((f) => f.status !== 'ready')) return false
+
+      for (const [i, f] of current.entries()) {
+        const want = saved.files[i]!
+        if (want.encodingMode !== 'auto') await get().setEncoding(f.fileId, want.encodingMode)
+        const now = get().files[i]!
+        if (now.sheetName !== want.sheetName && now.sheetNames.includes(want.sheetName)) {
+          await loadSheetInfo(f.fileId, want.sheetName)
+        }
+        get().setHeaderRow(f.fileId, want.headerRow)
+      }
+
+      set({ step: 1 })
+      if (!(await get().extractAll())) return false
+      // 表头没变才沿用保存的字段配置；变了就用自动配对的结果，停在字段步骤让用户确认
+      if (get().fieldsSignature !== saved.fieldsSignature) return false
+      set({ fieldRows: saved.fieldRows, normalize: { ...DEFAULT_NORMALIZE_OPTIONS, ...saved.normalize } })
+      return get().runCompare()
+    },
+
     reset() {
       get().files.forEach((f) => void worker().disposeFile(f.fileId))
+      originals.clear()
       set({ ...initialState })
     },
   }

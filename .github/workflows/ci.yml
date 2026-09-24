@@ -27,6 +27,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # 提交的 API 类型要和 openapi.json 一致
+      - run: pnpm gen:api && git diff --exit-code src/shared/api/schema.d.ts
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -68,8 +70,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
-      # 迁移能从空库跑到最新版本
+      # 迁移能从空库跑到最新版本，并且和模型一致（改了模型没生成迁移会失败）
       - run: uv run alembic upgrade head
+      - run: uv run alembic check
+      # 提交的 web/openapi.json 要和后端代码一致（改了接口要重新导出并 pnpm gen:api）
+      - run: uv run python -m app.export_openapi > ../web/openapi.json && git diff --exit-code ../web/openapi.json
 
   # 检查全部通过后才构建镜像；PR 只检查，不推送
   images:

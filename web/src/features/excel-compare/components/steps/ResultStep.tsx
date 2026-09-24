@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { t } from '../../copy'
 import type { CompareResult } from '../../engine/types'
 import { ResultGrid, type TagFilter } from '../../grid/ResultGrid'
+import { CloudSaveButton } from '../CloudSaveButton'
 import { ConfigSheet } from '../ConfigSheet'
 import { ExcludedSheet } from '../ExcludedSheet'
 import { RowDetailSheet } from '../RowDetailSheet'
@@ -48,6 +49,7 @@ export function ResultStep({ result }: { result: CompareResult }) {
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {t.result.elapsed(result.elapsedMs, result.summary.total)}
         </span>
+        <CloudSaveButton />
         <Button variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
           <SlidersHorizontalIcon />
           {t.result.adjust}
