@@ -1,0 +1,14 @@
+# 上线前自测：用本机构建的生产镜像起全套服务，只走 HTTP。
+#   docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# 打开 http://localhost:8080 ；邮件在 http://localhost:8025
+name: mylb-local
+
+services:
+  web:
+    ports: !override
+      - "8080:80"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"

@@ -181,9 +181,15 @@
 2026-09-24 部署准备：
 - 前端挪进 `web/`（仓库拆成 web/ + server/ 的第一步）
 - `xlsx` 依赖改为和 lockfile 一致的 `@e965/xlsx@0.20.3`，保证 `--frozen-lockfile` 能装
+- 后端骨架：FastAPI + 健康检查（存活 / 就绪）、SQLAlchemy 异步引擎、Alembic（容器启动时迁移）、MinIO 客户端（启动时自动建桶）
+- 部署：生产 / 开发 / 本机自测三份 compose；Caddy 镜像（静态文件 + `/api` 转发 + 自动 HTTPS）；GitHub Actions 检查通过后推送镜像到 GHCR
+
+实现中的补充决定（部署）：
+- 官方 `minio/minio` 镜像已经不在 Docker Hub 上，改用社区维护的分支 `pgsty/minio`，固定版本，可以用 `MINIO_IMAGE` 替换
+- Python 3.13
 
 待做：
 - 导出 xlsx（差异底色 + 差异明细 sheet）
 - IndexedDB 历史任务（存储层已完成，界面未接）
-- 部署与后端（第三节）：FastAPI 骨架、账号、云端保存；compose + Caddy；GitHub Actions 发布到 GHCR
+- 部署与后端（第三节）：账号、云端保存、前端 OpenAPI 类型生成
 - 备份（暂不做，已知风险）
