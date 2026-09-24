@@ -6,9 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A browser-based productivity toolkit ("Make Your Life Better"). The UI is Chinese-only, and so are the docs, comments and commit messages (`feat(excel-compare): …` style). Right now there is one tool: **Excel 数据对比** (`web/src/features/excel-compare`).
 
-By default user data never leaves the machine: parsing and comparison always run in the browser. A backend is planned (`docs/design.md` §三) but not built yet: FastAPI in `server/`, plus PostgreSQL and MinIO behind Caddy, deployed with docker compose. It only adds email accounts and opt-in "save to cloud" for tasks. The server stores data; it never parses or compares.
+By default user data never leaves the machine: parsing and comparison always run in the browser. The backend (`docs/design.md` §三) only adds email accounts and opt-in "save to cloud" for tasks. The server stores data; it never parses or compares. Every tool must keep working when the user is logged out or the backend is down.
 
-Layout: `web/` is the frontend (a standalone pnpm project), `docs/` holds the design doc, and the repo root holds only docs (and later the compose files).
+Layout:
+- `web/` is the frontend, a standalone pnpm project. Its Dockerfile builds a Caddy image that serves `dist/` and proxies `/api/*` to `server:8000`.
+- `server/` is the FastAPI backend, a uv project.
+- The repo root holds the compose files, `.github/workflows/ci.yml` and the docs.
 
 `docs/design.md` is the source of truth for product and design decisions, and it tracks implementation progress (已完成 / 待做). Update it **before** you change a design decision, and keep its progress section current.
 
@@ -27,6 +30,18 @@ pnpm lint                 # oxlint (.oxlintrc.json)
 pnpm build                # tsc -b && vite build
 ```
 
+Backend: uv, Python 3.13. Run from `server/`, with dependencies up via `docker compose -f docker-compose.dev.yml up -d` (Postgres :5432, MinIO :9000 / console :9001, Mailpit :8025). Copy `.env.example` to `.env` first.
+
+```bash
+uv run fastapi dev app/main.py        # :8000; web's `pnpm dev` proxies /api here
+uv run pytest                         # all tests; single: uv run pytest tests/test_health.py::test_health
+uv run ruff check . && uv run ruff format --check .
+uv run alembic upgrade head           # the container runs this on every start
+uv run alembic revision --autogenerate -m "说明"
+```
+
+Full stack from production images (HTTP on :8080): `docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build`.
+
 - `compare.perf.test.ts` runs the engine on 3 × 100k rows × 20 cols. It is part of `pnpm test` and takes a few seconds.
 - For E2E with an existing Chromium, set `PW_CHROMIUM_PATH=/path/to/chrome pnpm e2e`. In this cloud environment that is `/opt/pw-browsers/chromium`.
 - E2E fixtures are uploaded as in-memory buffers rather than file paths, because Chromium cannot read Chinese filenames without a UTF-8 locale. Follow the same pattern in new tests.
@@ -34,7 +49,17 @@ pnpm build                # tsc -b && vite build
 
 ## Architecture
 
-All paths below are relative to `web/`.
+**Backend (`server/app/`).**
+- All routes live under `/api`, including the docs at `/api/docs` and `/api/openapi.json`, because Caddy forwards the path unchanged.
+- Config comes only from env vars (`config.py`, pydantic-settings).
+- `db.py` provides the async SQLAlchemy engine and session; `models.py` has `Base`, which Alembic reads.
+- `storage.py` talks to MinIO over S3 with boto3. boto3 is synchronous, so call it via `run_in_threadpool`.
+- `/api/health` is liveness; `/api/health/ready` checks the DB and storage and returns 503 if either is down.
+- Tests use httpx `ASGITransport` (no lifespan) and monkeypatch dependencies.
+
+**CI.** On PRs, `ci.yml` only runs checks: web lint, typecheck, test and e2e; server ruff, pytest and `alembic upgrade head` against Postgres. On pushes to main and `v*` tags, once the checks pass it also pushes `ghcr.io/jint2020/make-your-life-better-{web,server}`, tagged `latest` / `sha-xxxxxxx` / semver.
+
+**Frontend.** All paths below are relative to `web/`.
 
 **Tool registry → lazy routes.** `src/tools.registry.ts` is the single list of tools (`ToolMeta` with `load: () => import(...)`). The home page cards, the top navigation and the lazy routes in `src/app/router.tsx` are all generated from it. To add a tool:
 1. Create `src/features/<id>/index.ts` and have it export `Component`.

@@ -1,0 +1,80 @@
+# 生产部署。用法见 README「部署」一节：
+#   cp .env.example .env   # 填好域名和密码
+#   docker compose pull && docker compose up -d
+#
+# 只有 web（Caddy）对外开放 80/443；server、postgres、minio 都在内部网络里。
+
+services:
+  web:
+    image: ghcr.io/jint2020/make-your-life-better-web:${APP_VERSION:-latest}
+    build: ./web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?在 .env 里填 SITE_ADDRESS（域名）}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+
+  server:
+    image: ghcr.io/jint2020/make-your-life-better-server:${APP_VERSION:-latest}
+    build:
+      context: ./server
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mylb}:${POSTGRES_PASSWORD:?在 .env 里填 POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mylb}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-mylb}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?在 .env 里填 MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:-mylb}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mylb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?在 .env 里填 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mylb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    # 官方 minio/minio 镜像已不再发布到 Docker Hub，这里用社区维护的分支（pgsty/minio）。
+    # 想换镜像时设置 MINIO_IMAGE
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mylb}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?在 .env 里填 MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  minio_data:

@@ -10,4 +10,8 @@ export default defineConfig({
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
   worker: { format: 'es' },
+  server: {
+    // 本机开发：/api 转发到本机后端（uv run fastapi dev），和生产一样同源
+    proxy: { '/api': 'http://localhost:8000' },
+  },
 })
