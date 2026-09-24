@@ -1,6 +1,7 @@
 # 上线前自测：用本机构建的生产镜像起全套服务，只走 HTTP。
 #   docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build
 # 打开 http://localhost:8080 ；邮件在 http://localhost:8025
+# 全套服务的 E2E：cd web && pnpm e2e:stack
 name: mylb-local
 
 services:

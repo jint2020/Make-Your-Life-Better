@@ -24,6 +24,15 @@ test('首页列出工具，点击进入 Excel 对比', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Excel 数据对比' })).toBeVisible()
 })
 
+test('没有后端时：不显示账号入口，工具照常可用', async ({ page }) => {
+  // pnpm e2e 跑的是纯静态 preview，没有 /api
+  await page.goto('/excel-compare')
+  await expect(page.getByRole('heading', { name: 'Excel 数据对比' })).toBeVisible()
+  await expect(page.getByTestId('account-button')).toHaveCount(0)
+  await page.goto('/account')
+  await expect(page.getByText('账号服务暂时不可用')).toBeVisible()
+})
+
 test('未知路由显示 404', async ({ page }) => {
   await page.goto('/no-such-tool')
   await expect(page.getByRole('heading', { name: '页面不存在' })).toBeVisible()
