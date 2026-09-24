@@ -1,10 +1,10 @@
 # Make Your Life Better — 设计摘要
 
-> 2026-09-23 经过 grilling 访谈确认。改动设计时先更新这份文档。
+> 2026-09-23 经过 grilling 访谈确认；2026-09-24 追加部署与后端（第三节）。改动设计时先更新这份文档。
 
 ## 一、整体架构
 
-- **定位**：浏览器里使用的提效工具集，**纯前端，数据不离开本机**
+- **定位**：浏览器里使用的提效工具集。**默认数据不离开本机**：解析和计算只在浏览器里做；只有用户登录后主动选择"保存到云端"的任务才会上传（见第三节）
 - **技术栈**：Vite + React 19 + TypeScript strict + Tailwind v4 + shadcn + tweakcn + React Router 8 + pnpm
 - **结构**：单页应用（SPA），每个工具一个懒加载路由
   - `src/tools.registry.ts` 统一登记工具的元信息和路由
@@ -14,7 +14,8 @@
   - 支持深色/浅色（跟随系统，也可以手动切换）
   - AG Grid 通过 Theming API 读同一组 CSS 变量
   - 差异、缺失、重复这几个语义色单独定义，只跟深浅色走，不跟用户主题走
-- **部署和语言**：暂不考虑。默认打成纯静态产物，界面只做中文，文案集中管理
+- **部署**：docker compose（Caddy + FastAPI + PostgreSQL + MinIO），见第三节
+- **语言**：界面只做中文，文案集中管理
 
 ## 二、工具一：Excel 数据对比
 
@@ -64,7 +65,7 @@
 - 存原始文件、配置和解析后的列式数据；结果不存，打开任务时重新算
 - 最多 10 个任务，超过 30 天自动清理
 - 有历史任务列表，可以单个删除、一键清空，并显示占用空间
-- 首页提示"数据只保存在本浏览器"
+- 首页提示"数据默认只保存在本浏览器"
 - 无痕模式或存储空间满了的时候，降级为不保存
 
 ### 边界情况
@@ -75,18 +76,89 @@
 - 内存不够时提示用户拆分文件
 - 主键映射不全时，第 ③ 步不能继续
 
-## 三、质量与性能
+## 三、部署与后端
+
+> 2026-09-24 经过 grilling 访谈确认。
+
+### 原则
+
+- 不登录、后端不可用时，所有工具照常可用；账号和云端只是附加能力，访问不到后端时只隐藏云端入口
+- 服务端只负责"存"，不负责"算"：不解析 Excel，不跑对比
+
+### 仓库结构
+
+- 同一个仓库，前后端各一个子目录：`web/`（现有前端整体挪入）、`server/`（FastAPI）
+- 根目录放 `docker-compose.yml`（生产）、`docker-compose.dev.yml`（开发）、`docs/`、README、CLAUDE.md
+- 接口契约：FastAPI 生成 OpenAPI，前端用 `openapi-typescript` 生成类型，调用用 `openapi-fetch`
+
+### 后端技术栈
+
+- Python + FastAPI，包管理用 uv
+- SQLAlchemy 2.0（异步，asyncpg）+ Alembic；容器启动时自动执行 `alembic upgrade head`
+- Pydantic v2 + pydantic-settings，配置全部来自环境变量
+- MinIO 用 boto3 走 S3 协议（以后换云上对象存储只改 endpoint）
+- 密码哈希 argon2，发信 aiosmtplib
+- 代码检查和测试：ruff、pytest
+
+### 服务拓扑（compose）
+
+- `web`：Caddy + 前端构建产物（多阶段构建，一个镜像）。唯一对外的服务，开放 80/443，自动申请 HTTPS 证书
+  - 提供静态文件，`/api/*` 转发给 `server`
+  - 前后端同源，不需要跨域配置
+- `server`：FastAPI
+- `postgres`：账号、会话、验证码、任务元数据和配置
+- `minio`：用户上传的原始文件
+- `server`、`postgres`、`minio` 只在内部网络；MinIO 不对外，上传和下载都经过后端，先校验归属再转发
+- 开发用的 compose 额外加 Mailpit
+
+### 账号
+
+- 只能用邮箱注册，注册必须通过邮箱验证码（证明邮箱属于本人）；注册时可以不设密码，之后在设置里补上
+- 两种登录方式：邮箱 + 验证码；邮箱 + 密码（设过密码才能用）
+- 不单独做忘记密码流程：用验证码登录后在设置里改密码
+- 会话：服务端存会话，下发 httpOnly cookie（`SameSite=Lax`、`Secure`），可以退出，也能在服务端让会话失效
+- 防滥用：同一邮箱 60 秒内只能发一次验证码，每天最多 10 次；验证码 6 位、10 分钟有效、最多试 5 次；密码连续输错临时锁定
+- 发信：生产用通用 SMTP（参数全部来自环境变量，不绑定服务商）；开发用 Mailpit，E2E 从 Mailpit API 读验证码
+
+### 云端保存（Excel 对比）
+
+- 按任务手动保存：结果页有"保存到云端"按钮，点了才上传
+- 只上传原始文件和配置；解析后的数据和结果不上传，打开时在浏览器里重新解析、重新计算
+- 结构和本地 taskStore 对应：任务记录（配置）存 PostgreSQL，附件（原始文件）存 MinIO
+- 历史列表分"本机"和"云端"两部分，每条标明存在哪里；云端任务可以下载到本机，也可以删除；不做自动同步
+- 额度（环境变量可调）：每个用户总共 500 MB（`USER_QUOTA_BYTES`）、最多 50 个任务（`USER_MAX_TASKS`）、单个文件最大 50 MB（`MAX_FILE_BYTES`）
+- 超出额度时提示先删旧任务；不自动过期；设置页显示已用和剩余空间
+- 删除账号时，这个账号的所有云端文件一起删除
+- 本地"最多 10 个、30 天清理"是缓存规则，和云端规则分开
+
+### 构建和发布
+
+- GitHub Actions：前端 lint / typecheck / test，后端 ruff / pytest，全部通过才构建 `web` 和 `server` 镜像并推送到 GHCR
+- 镜像按 git tag 和 commit sha 打标签；服务器上执行 `docker compose pull && docker compose up -d`，回滚只改 `APP_VERSION`
+- compose 里同时写 `image:` 和 `build:`，没有镜像仓库时也能在服务器上现场构建
+
+### 本地开发
+
+- 日常：开发用的 compose 只起 postgres、minio、mailpit；前端本机 `pnpm dev`，后端本机 `uv run fastapi dev`；Vite 用 proxy 把 `/api` 转发到本机后端（和生产一样同源）
+- 上线前自测：一条命令用本机构建的生产镜像起全套服务（Caddy + server + postgres + minio + mailpit），验证 Caddy 配置和同源 cookie
+- E2E 分两层：现有纯前端冒烟测试不依赖后端，保留；新增登录和云端保存的测试针对全套服务
+
+### 备份
+
+- **暂不做**（已知风险）：在补上之前，服务器磁盘损坏或服务器被删会丢失所有账号和云端文件
+
+## 四、质量与性能
 
 - 对比引擎写成纯函数，放在 Worker 里跑，用 Vitest 做单测，重点测值归一化
 - 用生成的 10 万行测试文件跑 Playwright 冒烟测试
 - 目标：3 个文件 × 10 万行 × 20 列，出结果 ≤ 5 秒；滚动保持 60fps；主线程上没有超过 100ms 的长任务
 
-## 四、选型备忘
+## 五、选型备忘
 
 - 不用 Handsontable：7.0 之后只对非商业用途免费
 - 不用 Glide Data Grid：正式版只支持到 React 18，支持 React 19 的版本还停在 alpha，维护也放缓了
 
-## 五、实现进度（2026-09-23）
+## 六、实现进度（2026-09-23）
 
 已完成：
 - 解析：xlsx（SheetJS）/ csv（PapaParse）都在 Worker 里跑；合并单元格填充；表头行自动识别（跳过合并的大标题）；空列名 / 重名列处理；GBK 自动识别；拒绝 .xls 和加密文件
@@ -109,3 +181,5 @@
 待做：
 - 导出 xlsx（差异底色 + 差异明细 sheet）
 - IndexedDB 历史任务（存储层已完成，界面未接）
+- 部署与后端（第三节）：仓库拆成 web/ + server/；FastAPI 骨架、账号、云端保存；compose + Caddy；GitHub Actions 发布到 GHCR
+- 备份（暂不做，已知风险）
