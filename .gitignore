@@ -5,3 +5,12 @@ dist
 test-results
 playwright-report
 *.tsbuildinfo
+
+# 部署配置
+.env
+
+# Python
+__pycache__
+.venv
+.pytest_cache
+.ruff_cache

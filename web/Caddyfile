@@ -1,0 +1,29 @@
+# SITE_ADDRESS：生产填域名（例如 tools.example.com，Caddy 会自动申请 HTTPS 证书）；
+# 本机自测填 :80（只走 HTTP）
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM:server:8000}
+	}
+
+	handle {
+		root * /srv
+		# 带哈希的构建产物可以长期缓存；其余（主要是 index.html）每次都要校验，
+		# 否则发版后用户可能拿到引用旧资源的页面
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		header @notAssets Cache-Control "no-cache"
+		@notAssets not path /assets/*
+		# SPA：找不到的路径回退到 index.html，由前端路由处理
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		-Server
+	}
+}
