@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A browser-only productivity toolkit ("Make Your Life Better"). Pure frontend: user data never leaves the machine, so there is no backend. The UI is Chinese-only, and so are the docs, comments and commit messages (`feat(excel-compare): …` style). Right now there is one tool: **Excel 数据对比** (`src/features/excel-compare`).
+A browser-based productivity toolkit ("Make Your Life Better"). The UI is Chinese-only, and so are the docs, comments and commit messages (`feat(excel-compare): …` style). Right now there is one tool: **Excel 数据对比** (`web/src/features/excel-compare`).
+
+By default user data never leaves the machine: parsing and comparison always run in the browser. A backend is planned (`docs/design.md` §三) but not built yet: FastAPI in `server/`, plus PostgreSQL and MinIO behind Caddy, deployed with docker compose. It only adds email accounts and opt-in "save to cloud" for tasks. The server stores data; it never parses or compares.
+
+Layout: `web/` is the frontend (a standalone pnpm project), `docs/` holds the design doc, and the repo root holds only docs (and later the compose files).
 
 `docs/design.md` is the source of truth for product and design decisions, and it tracks implementation progress (已完成 / 待做). Update it **before** you change a design decision, and keep its progress section current.
 
 ## Commands
 
-pnpm, Node >= 22.22.
+Frontend: pnpm, Node >= 22.22. Run everything from `web/`.
 
 ```bash
 pnpm dev                  # Vite dev server
@@ -26,9 +30,11 @@ pnpm build                # tsc -b && vite build
 - `compare.perf.test.ts` runs the engine on 3 × 100k rows × 20 cols. It is part of `pnpm test` and takes a few seconds.
 - For E2E with an existing Chromium, set `PW_CHROMIUM_PATH=/path/to/chrome pnpm e2e`. In this cloud environment that is `/opt/pw-browsers/chromium`.
 - E2E fixtures are uploaded as in-memory buffers rather than file paths, because Chromium cannot read Chinese filenames without a UTF-8 locale. Follow the same pattern in new tests.
-- `xlsx` is SheetJS 0.20.3 installed from the official CDN tarball. **Never** switch it to npm `xlsx` (0.18.5 has known vulnerabilities). If the CDN is unreachable, the fallback is `pnpm add xlsx@npm:@e965/xlsx@0.20.3`.
+- `xlsx` is SheetJS 0.20.3 via the npm mirror `npm:@e965/xlsx@0.20.3`, the package the lockfile was generated with (`cdn.sheetjs.com` is not reachable everywhere). **Never** switch it to npm `xlsx` (0.18.5 has known vulnerabilities). To switch back to the official build: `pnpm add xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`.
 
 ## Architecture
+
+All paths below are relative to `web/`.
 
 **Tool registry → lazy routes.** `src/tools.registry.ts` is the single list of tools (`ToolMeta` with `load: () => import(...)`). The home page cards, the top navigation and the lazy routes in `src/app/router.tsx` are all generated from it. To add a tool:
 1. Create `src/features/<id>/index.ts` and have it export `Component`.

@@ -178,8 +178,12 @@
 - 批量设置后显示结果提示，并可撤销最近一次批量操作；之后只要逐行修改了字段配置，提示和撤销就失效
 - 默认用途不变（公共字段默认对比）；字段搜索筛选、记住上次设置暂不做
 
+2026-09-24 部署准备：
+- 前端挪进 `web/`（仓库拆成 web/ + server/ 的第一步）
+- `xlsx` 依赖改为和 lockfile 一致的 `@e965/xlsx@0.20.3`，保证 `--frozen-lockfile` 能装
+
 待做：
 - 导出 xlsx（差异底色 + 差异明细 sheet）
 - IndexedDB 历史任务（存储层已完成，界面未接）
-- 部署与后端（第三节）：仓库拆成 web/ + server/；FastAPI 骨架、账号、云端保存；compose + Caddy；GitHub Actions 发布到 GHCR
+- 部署与后端（第三节）：FastAPI 骨架、账号、云端保存；compose + Caddy；GitHub Actions 发布到 GHCR
 - 备份（暂不做，已知风险）

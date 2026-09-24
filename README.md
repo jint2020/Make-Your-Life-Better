@@ -1,6 +1,6 @@
 # Make Your Life Better
 
-浏览器里的提效工具集。纯前端，数据只在本机处理。
+浏览器里的提效工具集。默认数据只在本机处理：解析和对比都在浏览器里完成。
 
 设计决策见 [docs/design.md](docs/design.md)。
 
@@ -10,7 +10,10 @@ Vite 8 · React 19 · TypeScript（strict）· zustand · SheetJS 0.20 · PapaPa
 
 ## 开发
 
+前端在 `web/` 目录下，下面的命令都在 `web/` 里执行。
+
 ```bash
+cd web
 pnpm install
 pnpm dev          # 本地开发
 pnpm test         # 单元测试（Vitest）
@@ -22,18 +25,22 @@ pnpm build
 
 ### 关于 SheetJS（xlsx 解析）
 
-`package.json` 里的 `xlsx` 指向 SheetJS 官方 CDN 的 0.20.3 版本。npm 上的 `xlsx` 还停在 0.18.5，有已知漏洞，不要用那个版本。
+npm 上的 `xlsx` 还停在 0.18.5，有已知漏洞，不要用那个版本。
 
-如果公司网络访问不了 `cdn.sheetjs.com`，可以改用 npm 上的社区镜像包（内容相同，但不是官方发布）：
+`web/package.json` 目前用的是 npm 上的社区镜像包 `@e965/xlsx@0.20.3`（内容和官方 0.20.3 相同，但不是官方发布），因为 lockfile 就是按它生成的，CI 和 Docker 构建也不用访问 `cdn.sheetjs.com`。
+
+能访问官方 CDN 时，可以切回官方包（会同时更新 lockfile）：
 
 ```bash
-pnpm add xlsx@npm:@e965/xlsx@0.20.3
+pnpm add xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 ```
 
 ## 目录结构
 
 ```
-src/
+docs/design.md          设计决策
+web/                    前端（Vite 项目）
+web/src/
   app/                  应用外壳：路由、布局、首页、404
   components/ui/        shadcn 组件（可以用 `pnpm dlx shadcn add xxx` 继续添加）
   shared/
@@ -55,15 +62,15 @@ src/
 
 ## 新增一个工具
 
-1. 新建 `src/features/<tool-id>/index.ts`，导出 `Component`
-2. 在 `src/tools.registry.ts` 里加一条记录
+1. 新建 `web/src/features/<tool-id>/index.ts`，导出 `Component`
+2. 在 `web/src/tools.registry.ts` 里加一条记录
 
 首页卡片、顶部导航和懒加载路由会自动生成。
 
 ## 新增一套主题
 
 1. 在 [tweakcn.com](https://tweakcn.com) 调好主题，复制 Code 面板里的 CSS（`:root` 和 `.dark` 两块）
-2. 保存为 `src/shared/theme/presets/<id>.css`
-3. 在 `src/shared/theme/presets.ts` 里登记一行
+2. 保存为 `web/src/shared/theme/presets/<id>.css`
+3. 在 `web/src/shared/theme/presets.ts` 里登记一行
 
 差异高亮用的语义色（`--diff-*`）不会被主题覆盖。
