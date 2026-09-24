@@ -13,6 +13,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatSize } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { t } from '../../copy'
 import {
@@ -23,14 +24,9 @@ import {
   useCompareStore,
   type SourceFile,
 } from '../../state/store'
+import { CloudTaskList } from '../CloudTaskList'
 import { FileBadge } from '../FileBadge'
 import { StepFooter } from '../StepFooter'
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
 
 function FileRow({ file, index }: { file: SourceFile; index: number }) {
   const removeFile = useCompareStore((s) => s.removeFile)
@@ -171,25 +167,28 @@ export function UploadStep() {
           )}
         </div>
 
-        <Card className="h-fit gap-4">
-          <CardHeader>
-            <CardTitle>{t.upload.sampleTitle}</CardTitle>
-            <CardDescription className="leading-relaxed">{t.upload.sampleBody}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {(
-              [
-                [1_000, t.upload.sampleSmall],
-                [100_000, t.upload.samplePerf],
-              ] as const
-            ).map(([rows, label]) => (
-              <Button key={rows} variant="outline" disabled={sampleLoading !== null} onClick={() => sample(rows)}>
-                {sampleLoading === rows && <Loader2Icon className="animate-spin" />}
-                {sampleLoading === rows ? t.upload.sampleLoading : label}
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <CloudTaskList />
+          <Card className="h-fit gap-4">
+            <CardHeader>
+              <CardTitle>{t.upload.sampleTitle}</CardTitle>
+              <CardDescription className="leading-relaxed">{t.upload.sampleBody}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {(
+                [
+                  [1_000, t.upload.sampleSmall],
+                  [100_000, t.upload.samplePerf],
+                ] as const
+              ).map(([rows, label]) => (
+                <Button key={rows} variant="outline" disabled={sampleLoading !== null} onClick={() => sample(rows)}>
+                  {sampleLoading === rows && <Loader2Icon className="animate-spin" />}
+                  {sampleLoading === rows ? t.upload.sampleLoading : label}
+                </Button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div className="flex-1" />

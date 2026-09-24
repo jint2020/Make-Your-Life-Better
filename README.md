@@ -47,7 +47,14 @@ uv run ruff check . && uv run ruff format .      # 检查、格式化
 - MinIO 控制台：http://localhost:9001（mylb / mylb-dev-secret）
 - Mailpit 收件箱：http://localhost:8025
 
-新增数据库迁移：`uv run alembic revision --autogenerate -m "说明"`，生成后检查一遍再提交。
+新增数据库迁移：`uv run alembic revision --autogenerate -m "说明"`，生成后检查一遍再提交（CI 会跑 `alembic check`，改了模型没生成迁移会失败）。
+
+改了接口之后，重新生成前端的 API 类型（CI 会检查两者一致）：
+
+```bash
+cd server && uv run python -m app.export_openapi > ../web/openapi.json
+cd ../web && pnpm gen:api     # 生成 src/shared/api/schema.d.ts
+```
 
 ### 上线前自测
 
@@ -55,7 +62,8 @@ uv run ruff check . && uv run ruff format .      # 检查、格式化
 
 ```bash
 docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build
-# 打开 http://localhost:8080
+# 打开 http://localhost:8080，验证码邮件在 http://localhost:8025
+cd web && pnpm e2e:stack      # 全栈 E2E：注册、保存到云端、重新打开、密码登录、删除账号
 docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml down
 ```
 
@@ -84,7 +92,7 @@ GHCR 上的包默认是私有的。要么在包设置里改成公开，要么先
 
 ```bash
 # 服务器上，只需要 docker-compose.yml 和 .env 两个文件
-cp .env.example .env    # 填 SITE_ADDRESS（域名）和两个密码
+cp .env.example .env    # 填 SITE_ADDRESS（域名）、SMTP 发信配置和两个密码
 docker compose pull
 docker compose up -d
 ```
@@ -110,7 +118,8 @@ docker-compose.dev.yml  本机开发的依赖服务
 docker-compose.local.yml  上线前自测（叠加在生产配置上）
 .github/workflows/      CI：检查 + 构建推送镜像
 server/                 后端（FastAPI）
-  app/                  应用代码：配置、数据库、对象存储、路由
+  app/                  应用代码：配置、数据表、会话、发信、对象存储
+    routes/             接口：health、auth（账号）、cloud（云端任务）
   migrations/           Alembic 数据库迁移
 web/                    前端（Vite 项目；Dockerfile + Caddyfile 打成 Caddy 镜像）
 web/src/

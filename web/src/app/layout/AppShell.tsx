@@ -1,14 +1,22 @@
+import { useEffect } from 'react'
 import { Link, NavLink, Outlet, useNavigation } from 'react-router'
 import { SparklesIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/shared/auth/store'
 import { copy } from '@/shared/copy/zh'
 import { ThemeMenu } from '@/shared/theme/ThemeMenu'
 import { TOOLS } from '@/tools.registry'
+import { AccountButton } from './AccountButton'
 
 export function AppShell() {
   const navigation = useNavigation()
   const isLoading = navigation.state === 'loading'
+  const refreshAuth = useAuth((s) => s.refresh)
+
+  useEffect(() => {
+    void refreshAuth()
+  }, [refreshAuth])
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -46,7 +54,8 @@ export function AppShell() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <AccountButton />
             <ThemeMenu />
           </div>
         </div>

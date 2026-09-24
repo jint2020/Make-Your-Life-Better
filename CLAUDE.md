@@ -55,9 +55,18 @@ Full stack from production images (HTTP on :8080): `docker compose --env-file lo
 - `db.py` provides the async SQLAlchemy engine and session; `models.py` has `Base`, which Alembic reads.
 - `storage.py` talks to MinIO over S3 with boto3. boto3 is synchronous, so call it via `run_in_threadpool`.
 - `/api/health` is liveness; `/api/health/ready` checks the DB and storage and returns 503 if either is down.
-- Tests use httpx `ASGITransport` (no lifespan) and monkeypatch dependencies.
+- Accounts (`routes/auth.py`, `auth.py`):
+  - Email-code login auto-registers. Password login works only after the user sets a password while logged in; there is no separate reset flow.
+  - A session is a random token in an httpOnly cookie on `path=/api`; the DB stores only its SHA-256.
+  - Rate limits, lockout and quota numbers all come from `Settings`.
+- Cloud tasks (`routes/cloud.py`): the task config (arbitrary JSON from the tool) goes in Postgres; the original files go in MinIO under `users/<uid>/tasks/<tid>/<fid>`. Downloads are streamed through the backend after an ownership check. The user row is locked while quota is checked.
+- The mailer and object store are FastAPI dependencies (`get_mailer`, `get_object_store`); tests override them with `FakeMailer` and `InMemoryObjectStore`.
+- Tests run against a real Postgres database `mylb_test`, created and truncated by `tests/conftest.py`. Without a DB they skip locally but fail in CI. They use httpx `ASGITransport`, so the app lifespan does not run.
+- `Settings` has `env_ignore_empty=True`, because compose passes unset `${VAR:-}` values as empty strings.
 
-**CI.** On PRs, `ci.yml` only runs checks: web lint, typecheck, test and e2e; server ruff, pytest and `alembic upgrade head` against Postgres. On pushes to main and `v*` tags, once the checks pass it also pushes `ghcr.io/jint2020/make-your-life-better-{web,server}`, tagged `latest` / `sha-xxxxxxx` / semver.
+**API contract.** `web/openapi.json` is exported from the server (`uv run python -m app.export_openapi > ../web/openapi.json`), and `pnpm gen:api` turns it into `web/src/shared/api/schema.d.ts`. Call the API through the typed `openapi-fetch` client in `web/src/shared/api/client.ts`. CI fails if either generated file is stale. Operation IDs are set explicitly on every route.
+
+**CI.** On PRs, `ci.yml` only runs checks: web lint, typecheck, test and e2e; server ruff, pytest, `alembic upgrade head` + `alembic check` against Postgres, and the OpenAPI drift check. The full-stack E2E (`web/e2e-stack`, `pnpm e2e:stack`) is not in CI; run it locally against the compose stack, where it reads login codes from Mailpit's API. On pushes to main and `v*` tags, once the checks pass it also pushes `ghcr.io/jint2020/make-your-life-better-{web,server}`, tagged `latest` / `sha-xxxxxxx` / semver.
 
 **Frontend.** All paths below are relative to `web/`.
 
@@ -69,6 +78,7 @@ Full stack from production images (HTTP on :8080): `docker compose --env-file lo
 - `worker/createWorkerClient.ts` is a Comlink wrapper. It creates the worker lazily and recreates it after a crash (for example OOM).
 - `storage/` holds safe localStorage helpers and an IndexedDB task store (`idb`, tested with `fake-indexeddb`). The store is built, but the history UI is not wired up yet.
 - `theme/` holds tweakcn CSS presets (`presets/<id>.css` plus an entry in `presets.ts`), light/dark mode, and `agGridTheme.ts`, which bridges the same CSS variables to AG Grid's Theming API. The semantic `--diff-*` colors follow only light/dark and are never overridden by presets.
+- `auth/store.ts` holds the login state: `loading | anonymous | authenticated | unavailable`. `unavailable` covers no backend at all, for example `pnpm e2e` against a static preview. In that state, hide every account or cloud entry point and keep the tools working.
 - `copy/zh.ts` holds global UI strings. Each feature also has its own `copy.ts`. Keep user-facing text in these files, not inline in components.
 
 **Excel compare data flow.** Heavy data stays in the Web Worker:
@@ -91,6 +101,10 @@ Pipeline:
   - `state/fields.ts` holds the field-mapping logic: auto-pairing same-name columns, bulk role set/undo, validation, and `toCompareConfig`.
   - Components read the store through `state/hooks.ts`.
 - `grid/` is the read-only AG Grid Community result table. Modules are registered explicitly in `registerAgGrid.ts`; `ValidationModule` is registered only in dev. Columns are grouped by file first, then by field.
+- `cloud/cloud.ts` handles save, list, open and delete for cloud tasks.
+  - Saving uploads the original `File`s. The store keeps them in a module-level `originals` map, outside zustand state; parsing still happens only in the Worker.
+  - It also uploads `SavedCompareConfig` from `store.snapshot()`.
+  - Opening downloads the files and calls `store.restore()`. That replays inspect → encoding/sheet/header row → `extractAll`, then reapplies the saved field rows only if the headers signature still matches, and finally runs the compare.
 - `sample/makeSampleFiles.ts` generates deliberately messy sample files. The UI uses them, and so does `sample/pipeline.test.ts`.
 
 Date handling: SheetJS dates come out as UTC. They are converted to the same wall-clock time in the local timezone. Numeric cells with zero-padded display formats are read as their displayed text.

@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router'
 
 import { TOOLS } from '@/tools.registry'
 import { AppShell } from './layout/AppShell'
+import { AccountPage } from './pages/AccountPage'
 import { RouteError } from './pages/RouteError'
 import { HomePage } from './pages/HomePage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -15,6 +16,7 @@ export const router = createBrowserRouter([
     HydrateFallback: PageLoading,
     children: [
       { index: true, Component: HomePage },
+      { path: 'account', Component: AccountPage },
       ...TOOLS.map((tool) => ({
         path: tool.path,
         handle: { toolId: tool.id },
