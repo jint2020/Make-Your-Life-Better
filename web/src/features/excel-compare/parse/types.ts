@@ -31,6 +31,8 @@ export interface TableSummary {
   sheetName: string
   headers: string[]
   rowCount: number
+  /** samples[列]：前几个不重复的非空值，字段映射时帮用户确认选的列对不对 */
+  samples: string[][]
 }
 
 export type ParseErrorCode =
