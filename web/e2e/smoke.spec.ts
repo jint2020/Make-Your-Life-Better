@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
+import * as XLSX from 'xlsx'
 
 /**
  * 以内存 buffer 的方式上传，而不是传文件路径：
@@ -11,6 +12,18 @@ const fixture = (name: string) => ({
   mimeType: name.endsWith('.csv') ? 'text/csv' : 'application/octet-stream',
   buffer: fs.readFileSync(path.join(import.meta.dirname, 'fixtures', name)),
 })
+
+/** 点"导出 Excel"，拿到下载的文件并用 SheetJS 解析 */
+async function exportAndRead(page: Page, timeout = 30_000) {
+  const downloading = page.waitForEvent('download', { timeout })
+  await page.getByRole('button', { name: '导出 Excel' }).click()
+  const download = await downloading
+  const bytes = fs.readFileSync(await download.path())
+  const wb = XLSX.read(bytes, { type: 'buffer', cellStyles: true })
+  const aoa = (name: string) =>
+    XLSX.utils.sheet_to_json<(string | null)[]>(wb.Sheets[name]!, { header: 1, defval: null })
+  return { fileName: download.suggestedFilename(), wb, aoa }
+}
 
 async function chip(page: Page, label: string) {
   return page.getByRole('button', { name: new RegExp(`^${label} [\\d,]+$`) })
@@ -84,6 +97,25 @@ test('完整流程：两个 CSV → 自动配对 → 对比结果', async ({ pag
   const detail = page.getByRole('dialog')
   await expect(detail).toContainText('记录详情')
   await expect(detail).toContainText('政企客户部')
+  await page.keyboard.press('Escape')
+
+  // 导出：范围跟随当前筛选（有差异的 2 行），附差异明细
+  const { fileName, wb, aoa } = await exportAndRead(page)
+  expect(fileName).toMatch(/^对比结果_\d{8}-\d{4}\.xlsx$/)
+  expect(wb.SheetNames).toEqual(['对比结果', '差异明细'])
+  const rows = aoa('对比结果')
+  expect(rows).toHaveLength(2 + 2)
+  expect(rows[0]!.slice(0, 2)).toEqual(['工号', '状态'])
+  expect(aoa('差异明细').length).toBeGreaterThan(1)
+  // 至少有一个标黄的差异格子
+  const ws = wb.Sheets['对比结果']!
+  const filled = Object.keys(ws).filter((ref) => !ref.startsWith('!') && ws[ref]?.s?.fgColor?.rgb === 'FEF3C7')
+  expect(filled.length).toBeGreaterThan(0)
+
+  // 切到"全部"再导出，行数跟着变
+  await (await chip(page, '全部')).click()
+  const all = await exportAndRead(page)
+  expect(all.aoa('对比结果')).toHaveLength(2 + 5)
 })
 
 test('结果页：默认按字段并排，3 个文件时只标出不一样的那个', async ({ page }) => {
@@ -200,4 +232,13 @@ test('性能：3 个文件 × 10 万行', async ({ page }) => {
   const elapsed = Date.now() - started
   console.log(`10 万行 × 3：点"开始对比"到出结果 ${elapsed} ms`)
   expect(elapsed).toBeLessThan(5_000)
+
+  // 最坏情况：全部行一起导出
+  await (await chip(page, '全部')).click()
+  const exportStarted = Date.now()
+  const { aoa } = await exportAndRead(page, 60_000)
+  const exportElapsed = Date.now() - exportStarted
+  const total = Number((await (await chip(page, '全部')).innerText()).replace(/\D/g, ''))
+  console.log(`10 万行 × 3：全部 ${total} 行导出用时 ${exportElapsed} ms`)
+  expect(aoa('对比结果')).toHaveLength(2 + total)
 })

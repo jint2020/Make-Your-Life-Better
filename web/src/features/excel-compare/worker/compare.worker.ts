@@ -2,6 +2,7 @@ import { expose, transfer } from 'comlink'
 import type * as XLSX from 'xlsx'
 
 import { compareTables, CompareConfigError } from '../engine/compare'
+import type { ExportRequest } from '../export/buildExport'
 import type { CompareConfig, CompareResult, ParsedTable } from '../engine/types'
 import { decodeCsvBytes, type CsvEncoding } from '../parse/encoding'
 import { toErrorInfo } from '../parse/errors'
@@ -44,6 +45,11 @@ interface StoredFile {
 
 const CSV_SHEET = 'CSV'
 const files = new Map<string, StoredFile>()
+/**
+ * 最近一次的对比结果：导出时直接用这份，主线程只需要传"显示了哪些行、什么顺序"，
+ * 不用把几十万个单元格再传回 Worker
+ */
+let lastResult: CompareResult | null = null
 
 function ok<T>(value: T): Result<T> {
   return { ok: true, value }
@@ -154,6 +160,13 @@ const api = {
         return t
       })
       const result = compareTables(tables, config)
+      // 类型化数组要转交给主线程（转交后这边就不能用了），所以先留一份拷贝
+      lastResult = {
+        ...result,
+        tags: result.tags.slice(),
+        presence: result.presence.slice(),
+        diff: result.diff.map((d) => d.slice()),
+      }
       return transfer(ok(result), [
         result.tags.buffer,
         result.presence.buffer,
@@ -167,6 +180,24 @@ const api = {
 
   disposeFile(fileId: string): void {
     files.delete(fileId)
+    // 文件变了，之前的结果也就作废了
+    lastResult = null
+  },
+
+  /** 导出 xlsx：用最近一次的对比结果，范围和列按页面当前的设置 */
+  async exportXlsx(req: ExportRequest): Promise<Result<Uint8Array>> {
+    try {
+      if (!lastResult) return { ok: false, error: { code: 'not-found', message: '没有可以导出的结果，请重新对比。' } }
+      // 导出时才加载（fflate + 生成器），平时不占首屏体积
+      const [{ buildExportSheets }, { writeXlsx }] = await Promise.all([
+        import('../export/buildExport'),
+        import('../export/xlsxWriter'),
+      ])
+      const bytes = writeXlsx(buildExportSheets(lastResult, req))
+      return transfer(ok(bytes), [bytes.buffer as ArrayBuffer])
+    } catch (e) {
+      return fail(e)
+    }
   },
 
   makeSampleFiles(rowCount: number, fileCount: 2 | 3): SampleFile[] {

@@ -1,10 +1,12 @@
 import {
   CellStyleModule,
+  ClientSideRowModelApiModule,
   ClientSideRowModelModule,
   ColumnApiModule,
   ExternalFilterModule,
   LocaleModule,
   ModuleRegistry,
+  RowApiModule,
   RowStyleModule,
   TooltipModule,
   ValidationModule,
@@ -17,6 +19,9 @@ ModuleRegistry.registerModules([
   CellStyleModule,
   RowStyleModule,
   ColumnApiModule,
+  // 显示行数（getDisplayedRowCount）、导出时按显示顺序取行（forEachNodeAfterFilterAndSort）
+  RowApiModule,
+  ClientSideRowModelApiModule,
   TooltipModule,
   LocaleModule,
   ...(import.meta.env.DEV ? [ValidationModule] : []),

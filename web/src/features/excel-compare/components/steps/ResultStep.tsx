@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { SearchIcon, SlidersHorizontalIcon } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { DownloadIcon, Loader2Icon, SearchIcon, SlidersHorizontalIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { readLocal, writeLocal } from '@/shared/storage/local'
 import { t } from '../../copy'
 import type { CompareResult } from '../../engine/types'
+import { downloadExport } from '../../export/download'
 import { ResultGrid, type ColumnLayout, type TagFilter } from '../../grid/ResultGrid'
 import { CloudSaveButton } from '../CloudSaveButton'
 import { ConfigSheet } from '../ConfigSheet'
@@ -33,6 +34,26 @@ export function ResultStep({ result }: { result: CompareResult }) {
   const [configOpen, setConfigOpen] = useState(false)
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [detailRow, setDetailRow] = useState<number | null>(null)
+  const [visibleCount, setVisibleCount] = useState(0)
+  const displayedRowsRef = useRef<(() => Int32Array) | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  // 导出范围跟随页面：当前筛选、排序后显示的行 + 当前的列设置
+  const exportXlsx = async () => {
+    const rows = displayedRowsRef.current?.()
+    if (!rows) return
+    setExporting(true)
+    setExportError(null)
+    try {
+      const res = await downloadExport({ rows, layout, onlyDiffColumns })
+      if (!res.ok) setExportError(res.message)
+    } catch {
+      setExportError(t.export.failed)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -85,6 +106,17 @@ export function ResultStep({ result }: { result: CompareResult }) {
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {t.result.elapsed(result.elapsedMs, result.summary.total)}
         </span>
+        {exportError && <span className="text-xs text-destructive">{exportError}</span>}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={exporting || visibleCount === 0}
+          title={t.export.hint(visibleCount)}
+          onClick={() => void exportXlsx()}
+        >
+          {exporting ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
+          {exporting ? t.export.exporting : t.export.button}
+        </Button>
         <CloudSaveButton />
         <Button variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
           <SlidersHorizontalIcon />
@@ -112,6 +144,8 @@ export function ResultStep({ result }: { result: CompareResult }) {
           onlyDiffColumns={onlyDiffColumns}
           layout={layout}
           onRowClick={setDetailRow}
+          onVisibleCountChange={setVisibleCount}
+          displayedRowsRef={displayedRowsRef}
         />
       </div>
 
