@@ -6,6 +6,7 @@ import type { CompareConfig, CompareResult, ParsedTable } from '../engine/types'
 import { decodeCsvBytes, type CsvEncoding } from '../parse/encoding'
 import { toErrorInfo } from '../parse/errors'
 import {
+  columnSamples,
   csvToGrid,
   detectKind,
   gridInfo,
@@ -133,7 +134,13 @@ const api = {
       stored.table = table
       // 选定工作表后，其他工作表的网格不再需要
       for (const name of stored.grids.keys()) if (name !== sheetName) stored.grids.delete(name)
-      return ok({ fileId, sheetName, headers: table.headers, rowCount: table.rowCount })
+      return ok({
+        fileId,
+        sheetName,
+        headers: table.headers,
+        rowCount: table.rowCount,
+        samples: columnSamples(table),
+      })
     } catch (e) {
       return fail(e)
     }

@@ -22,15 +22,18 @@ const ROLE_ROW_CLASS: Record<FieldRole, string> = {
   ignore: 'text-muted-foreground',
 }
 
-function FieldRowView({ row, headers }: { row: FieldRow; headers: string[][] }) {
+/** 各文件：列名 → 示例值 */
+type SamplesByFile = Map<string, string[]>[]
+
+function FieldRowView({ row, headers, samples }: { row: FieldRow; headers: string[][]; samples: SamplesByFile }) {
   const updateField = useCompareStore((s) => s.updateField)
   const updateFieldColumn = useCompareStore((s) => s.updateFieldColumn)
   const keyMissing = row.role === 'key' && row.columns.some((c) => c == null)
 
   return (
     <tr className={cn('border-b last:border-0', ROLE_ROW_CLASS[row.role])} data-testid="field-row">
-      <td className="px-3 py-2 font-medium whitespace-nowrap">{row.label}</td>
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 align-top leading-8 font-medium whitespace-nowrap">{row.label}</td>
+      <td className="px-3 py-2 align-top">
         <NativeSelect
           size="sm"
           className="w-24"
@@ -45,25 +48,40 @@ function FieldRowView({ row, headers }: { row: FieldRow; headers: string[][] }) 
           ))}
         </NativeSelect>
       </td>
-      {headers.map((cols, f) => (
-        <td key={f} className="px-3 py-2">
-          <NativeSelect
-            size="sm"
-            className="min-w-36"
-            value={row.columns[f] ?? ''}
-            aria-label={`${row.label} 在文件 ${f + 1} 中对应的列`}
-            aria-invalid={keyMissing && row.columns[f] == null}
-            onChange={(e) => updateFieldColumn(row.id, f, e.target.value || null)}
-          >
-            <option value="">{t.fields.none}</option>
-            {cols.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </NativeSelect>
-        </td>
-      ))}
+      {headers.map((cols, f) => {
+        const col = row.columns[f]
+        const examples = col == null ? [] : (samples[f]?.get(col) ?? [])
+        return (
+          <td key={f} className="px-3 py-2 align-top">
+            <NativeSelect
+              size="sm"
+              // "（无）"：这个文件没有这个字段，用虚线框和灰色斜体和正常选项区分开
+              className={cn('min-w-36', col == null && 'border-dashed text-muted-foreground italic')}
+              value={col ?? ''}
+              aria-label={`${row.label} 在文件 ${f + 1} 中对应的列`}
+              aria-invalid={keyMissing && row.columns[f] == null}
+              onChange={(e) => updateFieldColumn(row.id, f, e.target.value || null)}
+            >
+              <option value="">{t.fields.none}</option>
+              {cols.map((c) => (
+                <option key={c} value={c} className="text-foreground not-italic">
+                  {c}
+                </option>
+              ))}
+            </NativeSelect>
+            {examples.length > 0 && (
+              <p
+                className="mt-1 max-w-56 truncate text-xs text-muted-foreground"
+                title={examples.join('、')}
+                aria-label={t.fields.samplesLabel(col!)}
+                data-testid="field-samples"
+              >
+                {examples.join('、')}
+              </p>
+            )}
+          </td>
+        )
+      })}
     </tr>
   )
 }
@@ -150,6 +168,9 @@ export function FieldConfigPanel() {
   const fieldRows = useCompareStore((s) => s.fieldRows)
   const compareError = useCompareStore((s) => s.compareError)
   const headers = files.map((f) => f.table?.headers ?? [])
+  const samples: SamplesByFile = files.map(
+    (f) => new Map(f.table?.headers.map((h, c) => [h, f.table?.samples[c] ?? []]) ?? []),
+  )
   const { errors, hints } = validateFieldRows(fieldRows)
 
   return (
@@ -157,8 +178,17 @@ export function FieldConfigPanel() {
       <section className="space-y-3">
         <div className="space-y-1">
           <h3 className="font-medium">{t.fields.title}</h3>
-          <p className="text-sm text-muted-foreground">{t.fields.desc}</p>
-          <p className="text-xs text-muted-foreground">{t.fields.roleHelp}</p>
+          <p className="text-sm text-muted-foreground">
+            {t.fields.desc}
+          </p>
+          <details className="text-xs text-muted-foreground">
+            <summary className="w-fit cursor-pointer select-none hover:text-foreground">{t.fields.roleHelpTitle}</summary>
+            <ul className="mt-1 space-y-0.5 pl-4">
+              {t.fields.roleHelp.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </details>
         </div>
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
@@ -180,7 +210,7 @@ export function FieldConfigPanel() {
             </thead>
             <tbody>
               {fieldRows.map((row) => (
-                <FieldRowView key={row.id} row={row} headers={headers} />
+                <FieldRowView key={row.id} row={row} headers={headers} samples={samples} />
               ))}
             </tbody>
           </table>

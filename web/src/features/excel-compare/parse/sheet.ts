@@ -209,3 +209,19 @@ export function gridToTable(
     rowCount: dataRowIdx.length,
   }
 }
+
+/**
+ * 每列取几个示例值（去重、跳过空值、按出现顺序），配置字段时显示在下拉框下面，方便确认"选的是不是这一列"。
+ * 最多看前 scanRows 行，大表也不会慢。
+ */
+export function columnSamples(table: ParsedTable, count = 3, scanRows = 200): string[][] {
+  return table.columns.map((column) => {
+    const seen = new Set<string>()
+    const limit = Math.min(table.rowCount, scanRows)
+    for (let r = 0; r < limit && seen.size < count; r++) {
+      const text = displayValue(column[r])
+      if (text != null && text.trim() !== '') seen.add(text)
+    }
+    return [...seen]
+  })
+}

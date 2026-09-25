@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatSize } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/shared/auth/store'
 import { t } from '../../copy'
 import {
   canLeaveUpload,
@@ -53,6 +54,12 @@ function FileRow({ file, index }: { file: SourceFile; index: number }) {
               <CheckCircle2Icon className="size-3.5 text-diff-equal-fg" />
               <span className="text-muted-foreground">
                 {file.kind === 'csv' ? t.upload.csv(file.encoding) : t.upload.sheets(file.sheetNames.length)}
+                {file.sheetInfo &&
+                  ` · ${t.upload.rows(
+                    file.sheetInfo.rowCount,
+                    // 多个工作表时说明是哪一个的行数（默认第一个，下一步可以换）
+                    file.kind === 'xlsx' && file.sheetNames.length > 1 ? (file.sheetName ?? undefined) : undefined,
+                  )}`}
               </span>
             </>
           )}
@@ -87,7 +94,11 @@ export function UploadStep() {
   const [dragging, setDragging] = useState(false)
   const [sampleLoading, setSampleLoading] = useState<number | null>(null)
 
+  const authenticated = useAuth((s) => s.status === 'authenticated')
   const full = files.length >= MAX_FILES
+  const hasFiles = files.length > 0
+  // 已经有文件后，示例卡片就不需要了；右侧只剩云端任务（登录时）
+  const showSidebar = !hasFiles || authenticated
   const canNext = canLeaveUpload(files)
 
   const onDrop = (e: DragEvent) => {
@@ -113,7 +124,7 @@ export function UploadStep() {
 
   return (
     <div className="flex flex-1 flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className={cn('grid gap-4', showSidebar && 'lg:grid-cols-[1fr_340px]')}>
         <div className="space-y-3">
           <button
             type="button"
@@ -126,17 +137,28 @@ export function UploadStep() {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             className={cn(
-              'flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors',
+              'flex w-full items-center justify-center rounded-xl border-2 border-dashed text-center transition-colors',
               'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              // 已经有文件后收成一行，把位置让给文件列表
+              hasFiles ? 'gap-2 px-4 py-3 text-sm' : 'flex-col gap-2 px-6 py-10',
               dragging ? 'border-primary bg-primary/5' : 'hover:border-primary/50 hover:bg-accent/40',
               full && 'cursor-not-allowed opacity-60 hover:border-border hover:bg-transparent',
             )}
           >
-            <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <UploadIcon className="size-5" />
-            </span>
-            <span className="font-medium">{full ? t.upload.dropFull : t.upload.dropTitle}</span>
-            {!full && <span className="text-sm text-muted-foreground">{t.upload.dropHint}</span>}
+            {hasFiles ? (
+              <>
+                <UploadIcon className="size-4 text-primary" />
+                <span className={cn(!full && 'font-medium')}>{full ? t.upload.dropFull : t.upload.dropMore}</span>
+              </>
+            ) : (
+              <>
+                <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <UploadIcon className="size-5" />
+                </span>
+                <span className="font-medium">{t.upload.dropTitle}</span>
+                <span className="text-sm text-muted-foreground">{t.upload.dropHint}</span>
+              </>
+            )}
           </button>
           <input
             ref={inputRef}
@@ -167,28 +189,32 @@ export function UploadStep() {
           )}
         </div>
 
-        <div className="space-y-4">
-          <CloudTaskList />
-          <Card className="h-fit gap-4">
-            <CardHeader>
-              <CardTitle>{t.upload.sampleTitle}</CardTitle>
-              <CardDescription className="leading-relaxed">{t.upload.sampleBody}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              {(
-                [
-                  [1_000, t.upload.sampleSmall],
-                  [100_000, t.upload.samplePerf],
-                ] as const
-              ).map(([rows, label]) => (
-                <Button key={rows} variant="outline" disabled={sampleLoading !== null} onClick={() => sample(rows)}>
-                  {sampleLoading === rows && <Loader2Icon className="animate-spin" />}
-                  {sampleLoading === rows ? t.upload.sampleLoading : label}
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
+        {showSidebar && (
+          <div className="space-y-4">
+            <CloudTaskList />
+            {!hasFiles && (
+              <Card className="h-fit gap-4">
+                <CardHeader>
+                  <CardTitle>{t.upload.sampleTitle}</CardTitle>
+                  <CardDescription className="leading-relaxed">{t.upload.sampleBody}</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  {(
+                    [
+                      [1_000, t.upload.sampleSmall],
+                      [100_000, t.upload.samplePerf],
+                    ] as const
+                  ).map(([rows, label]) => (
+                    <Button key={rows} variant="outline" disabled={sampleLoading !== null} onClick={() => sample(rows)}>
+                      {sampleLoading === rows && <Loader2Icon className="animate-spin" />}
+                      {sampleLoading === rows ? t.upload.sampleLoading : label}
+                    </Button>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1" />

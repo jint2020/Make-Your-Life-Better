@@ -62,8 +62,8 @@ test('完整流程：两个 CSV → 自动配对 → 对比结果', async ({ pag
   await expect(page.getByTestId('file-row').nth(1)).toContainText('CSV')
   await page.getByRole('button', { name: '下一步' }).click()
 
-  // 第 2 步：预览里能看到 GBK 解码后的中文
-  await expect(page.getByTestId('sheet-card').first()).toContainText('培训中心')
+  // 第 2 步：默认折叠成摘要，摘要里能看到 GBK 解码后的中文表头
+  await expect(page.getByTestId('sheet-summary').first()).toContainText('表头：工号、姓名、部门')
   await page.getByRole('button', { name: '下一步' }).click()
 
   // 第 3 步：同名列自动配对，工号自动识别为主键
@@ -128,11 +128,24 @@ test('示例文件：大标题、列名不一致、主键重复/为空', async (
   await page.getByRole('button', { name: /示例：3 个文件/ }).click()
   await expect(page.getByTestId('file-row')).toHaveCount(3)
   await expect(page.getByRole('button', { name: '下一步' })).toBeEnabled({ timeout: 15_000 })
+  // 上传步骤：文件加满后示例卡片隐藏，文件行显示行数
+  await expect(page.getByText('手边没有文件？')).toHaveCount(0)
+  await expect(page.getByTestId('file-row').first()).toContainText('花名册 992 行')
   await page.getByRole('button', { name: '下一步' }).click()
 
-  // A 文件第 1 行是合并的大标题，表头自动识别为第 2 行
-  await expect(page.getByLabel('表头在第几行').first()).toHaveValue('2')
+  // A 文件第 1 行是合并的大标题，表头自动识别为第 2 行；默认只显示摘要，点"调整"才展开
+  const firstCard = page.getByTestId('sheet-card').first()
+  await expect(firstCard.getByTestId('sheet-summary')).toContainText('表头第 2 行')
+  await expect(firstCard.getByTestId('sheet-summary')).toContainText('表头：工号、姓名、部门')
+  await expect(page.getByLabel('表头在第几行')).toHaveCount(0)
+  await firstCard.getByRole('button', { name: '调整' }).click()
+  await expect(firstCard.getByLabel('表头在第几行')).toHaveValue('2')
+  await firstCard.getByRole('button', { name: '收起' }).click()
+  await expect(firstCard.getByTestId('sheet-summary')).toBeVisible()
   await page.getByRole('button', { name: '下一步' }).click()
+
+  // 第 3 步：列下拉框下面有示例值
+  await expect(page.getByTestId('field-samples').first()).toContainText('000001、000002')
 
   // "员工编号"和"工号"名字不同，但都像主键，自动配上
   await expect(page.getByLabel('工号 在文件 2 中对应的列')).toHaveValue('员工编号')

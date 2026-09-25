@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import { describe, expect, it } from 'vitest'
 
 import {
+  columnSamples,
   csvToGrid,
   detectKind,
   gridInfo,
@@ -102,6 +103,26 @@ describe('xlsx → 网格 → 表格', () => {
 
   it('损坏的文件报 corrupt', () => {
     expect(() => readWorkbook(new Uint8Array([0x50, 0x4b, 3, 4, 9, 9, 9]))).toThrow(/损坏/)
+  })
+})
+
+describe('columnSamples', () => {
+  it('每列取前几个不重复的非空值', () => {
+    const grid = [
+      ['工号', '部门', '备注'],
+      ['001', '财务部', null],
+      ['002', '财务部', ''],
+      ['003', ' ', null],
+      ['004', '市场部', null],
+      ['005', '综合部', null],
+    ]
+    const table = gridToTable(grid, META, 1)
+    expect(columnSamples(table)).toEqual([['001', '002', '003'], ['财务部', '市场部', '综合部'], []])
+  })
+
+  it('日期按展示格式输出', () => {
+    const table = gridToTable([['入职日期'], [new Date(2020, 0, 5)]], META, 1)
+    expect(columnSamples(table)).toEqual([['2020-01-05']])
   })
 })
 

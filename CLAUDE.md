@@ -83,7 +83,7 @@ Full stack from production images (HTTP on :8080): `docker compose --env-file lo
 
 **Excel compare data flow.** Heavy data stays in the Web Worker:
 - `worker/compare.worker.ts` holds workbooks, sheet grids and parsed tables in a `Map` keyed by `fileId`.
-- The main thread only receives previews, header summaries (`TableSummary`) and the final `CompareResult`.
+- The main thread only receives previews, header summaries (`TableSummary`, which includes a few sample values per column from `columnSamples`, shown in the field mapping) and the final `CompareResult`.
 - Worker methods return `Result<T>` (`{ok, value} | {ok: false, error}`) and do not throw across the Comlink boundary. Errors are normalized with `parse/errors.ts`.
 
 Pipeline:
