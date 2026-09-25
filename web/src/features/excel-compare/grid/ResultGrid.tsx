@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, ColGroupDef, GridApi, IRowNode } from 'ag-grid-community'
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale'
@@ -6,15 +6,14 @@ import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale'
 import { agGridTheme } from '@/shared/theme/agGridTheme'
 import { TAG_DIFF, TAG_EQUAL, TAG_MISSING, type CompareResult } from '../engine/types'
 import { t } from '../copy'
-import { fileLetter, type RowRef } from './shared'
+import { fileLetter, type ColumnLayout, type RowRef } from './shared'
 import { StatusCell } from './StatusCell'
 import './registerAgGrid'
 import './grid.css'
 
 export type TagFilter = 'all' | 'diff' | 'missing' | 'equal'
 
-/** 列的排列方式：field = 同一字段的各文件值挨在一起（默认）；file = 按文件分组 */
-export type ColumnLayout = 'field' | 'file'
+export type { ColumnLayout } from './shared'
 
 const TAG_MASK: Record<Exclude<TagFilter, 'all'>, number> = {
   diff: TAG_DIFF,
@@ -30,6 +29,8 @@ interface ResultGridProps {
   layout: ColumnLayout
   onRowClick?: (rowIndex: number) => void
   onVisibleCountChange?: (n: number) => void
+  /** 导出用：取当前筛选、排序后显示的行（结果里的行下标，按显示顺序） */
+  displayedRowsRef?: RefObject<(() => Int32Array) | null>
 }
 
 const LOCALE = { ...AG_GRID_LOCALE_CN, noRowsToShow: t.result.empty }
@@ -46,6 +47,7 @@ export function ResultGrid({
   layout,
   onRowClick,
   onVisibleCountChange,
+  displayedRowsRef,
 }: ResultGridProps) {
   const apiRef = useRef<GridApi<RowRef> | null>(null)
   // AG Grid 的外部筛选回调读这个 ref，回调本身保持稳定
@@ -172,6 +174,15 @@ export function ResultGrid({
       onRowClicked={(e) => e.data && onRowClick?.(e.data.i)}
       onGridReady={(e) => {
         apiRef.current = e.api
+        if (displayedRowsRef) {
+          displayedRowsRef.current = () => {
+            const rows: number[] = []
+            e.api.forEachNodeAfterFilterAndSort((node) => {
+              if (node.data) rows.push(node.data.i)
+            })
+            return Int32Array.from(rows)
+          }
+        }
         e.api.onFilterChanged()
         onVisibleCountChange?.(e.api.getDisplayedRowCount())
       }}

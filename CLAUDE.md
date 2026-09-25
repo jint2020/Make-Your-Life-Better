@@ -44,7 +44,7 @@ Full stack from production images (HTTP on :8080): `docker compose --env-file lo
 
 - `compare.perf.test.ts` runs the engine on 3 × 100k rows × 20 cols. It is part of `pnpm test` and takes a few seconds.
 - For E2E with an existing Chromium, set `PW_CHROMIUM_PATH=/path/to/chrome pnpm e2e`. In this cloud environment that is `/opt/pw-browsers/chromium`.
-- E2E fixtures are uploaded as in-memory buffers rather than file paths, because Chromium cannot read Chinese filenames without a UTF-8 locale. Follow the same pattern in new tests.
+- E2E fixtures are uploaded as in-memory buffers rather than file paths, because Chromium cannot read Chinese filenames without a UTF-8 locale. Follow the same pattern in new tests. For the same reason, the Playwright configs launch Chromium with `LANG=C.UTF-8`; without it, Chinese download filenames become "download".
 - `xlsx` is SheetJS 0.20.3 via the npm mirror `npm:@e965/xlsx@0.20.3`, the package the lockfile was generated with (`cdn.sheetjs.com` is not reachable everywhere). **Never** switch it to npm `xlsx` (0.18.5 has known vulnerabilities). To switch back to the official build: `pnpm add xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`.
 
 ## Architecture
@@ -101,9 +101,15 @@ Pipeline:
 - `state/store.ts` is the zustand wizard store: 4 steps, upload → sheet/header row → fields → result.
   - `state/fields.ts` holds the field-mapping logic: auto-pairing same-name columns, bulk role set/undo, validation, and `toCompareConfig`.
   - Components read the store through `state/hooks.ts`.
-- `grid/` is the read-only AG Grid Community result table. Modules are registered explicitly in `registerAgGrid.ts`; `ValidationModule` is registered only in dev.
+- `grid/` is the read-only AG Grid Community result table. Modules are registered explicitly in `registerAgGrid.ts`; `ValidationModule` is registered only in dev. A grid API call whose module is not registered returns `undefined` in production builds instead of throwing, so register the module when you use a new API.
   - Columns are grouped by field first by default (`layout: 'field'`; each field's A / B / C side by side); users can switch to file-first, and the choice is saved in localStorage. Column ids are `v_<file>_<field>`.
   - In AG Grid 36, pinned and centre cells of a row live inside the same `.ag-row` element. E2E tests locate a row with `.ag-row` that has a `[col-id="key"]` child.
+- `export/` builds the xlsx export inside the Worker. It does **not** use ExcelJS, which took 198 s and 3.6 GB for 100k rows. Instead:
+  - `xlsxWriter.ts` is a minimal writer: shared strings, fflate streaming zip, fixed styles (`XLSX_STYLE`), merges, frozen panes, autofilter and column widths.
+  - `buildExport.ts` maps a `CompareResult` to three sheets: the result, per-diff details, and the excluded rows. It follows the page's layout and highlight rules.
+  - The worker keeps `lastResult` after `compare()`. The main thread sends only the displayed row indices in display order (`ResultGrid`'s `displayedRowsRef`, which needs `ClientSideRowModelApiModule`) and gets the file bytes back.
+  - Both modules are dynamically imported on first export.
+  - Unit tests read the output back with SheetJS; openpyxl was used as a stricter manual check.
 - `cloud/cloud.ts` handles save, list, open and delete for cloud tasks.
   - Saving uploads the original `File`s. The store keeps them in a module-level `originals` map, outside zustand state; parsing still happens only in the Worker.
   - It also uploads `SavedCompareConfig` from `store.snapshot()`.
