@@ -97,10 +97,13 @@ Pipeline:
   - `compare.ts` handles composite-key matching and per-field comparison. Rows with duplicate or empty keys are set aside, not compared.
   - Tables are **columnar** (`ParsedTable`).
   - A row can carry several status tags at once. There is no single baseline file.
+  - `diff[field][row]` is a per-file bitmask, not 0/1: bit f set means "highlight file f's value". With 3 files and a majority value, only the minority file is set (`diffMask`). Test "has a diff" with `!== 0`. `fieldFiles[field]` is the bitmask of files that map the field.
 - `state/store.ts` is the zustand wizard store: 4 steps, upload → sheet/header row → fields → result.
   - `state/fields.ts` holds the field-mapping logic: auto-pairing same-name columns, bulk role set/undo, validation, and `toCompareConfig`.
   - Components read the store through `state/hooks.ts`.
-- `grid/` is the read-only AG Grid Community result table. Modules are registered explicitly in `registerAgGrid.ts`; `ValidationModule` is registered only in dev. Columns are grouped by file first, then by field.
+- `grid/` is the read-only AG Grid Community result table. Modules are registered explicitly in `registerAgGrid.ts`; `ValidationModule` is registered only in dev.
+  - Columns are grouped by field first by default (`layout: 'field'`; each field's A / B / C side by side); users can switch to file-first, and the choice is saved in localStorage. Column ids are `v_<file>_<field>`.
+  - In AG Grid 36, pinned and centre cells of a row live inside the same `.ag-row` element. E2E tests locate a row with `.ag-row` that has a `[col-id="key"]` child.
 - `cloud/cloud.ts` handles save, list, open and delete for cloud tasks.
   - Saving uploads the original `File`s. The store keeps them in a module-level `originals` map, outside zustand state; parsing still happens only in the Worker.
   - It also uploads `SavedCompareConfig` from `store.snapshot()`.
