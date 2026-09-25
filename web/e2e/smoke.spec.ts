@@ -86,6 +86,43 @@ test('完整流程：两个 CSV → 自动配对 → 对比结果', async ({ pag
   await expect(detail).toContainText('政企客户部')
 })
 
+test('结果页：默认按字段并排，3 个文件时只标出不一样的那个', async ({ page }) => {
+  await page.goto('/excel-compare')
+  await page.getByRole('button', { name: /示例：3 个文件/ }).click()
+  await expect(page.getByRole('button', { name: '下一步' })).toBeEnabled({ timeout: 15_000 })
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '开始对比' }).click()
+
+  const grid = page.getByTestId('result-grid')
+  await expect(page.getByRole('radio', { name: '按字段并排' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('file-legend')).toContainText('HR系统导出.csv')
+
+  // 字段顺序：姓名 0、部门 1、岗位 2 …；列 id 是 v_<文件>_<字段>。C 没有"岗位"，不显示那一列
+  await expect(grid.locator('.ag-header-cell[col-id="v_1_2"]')).toHaveCount(1)
+  await expect(grid.locator('.ag-header-cell[col-id="v_2_2"]')).toHaveCount(0)
+
+  // 000004 的部门：A 财务部、B 市场部、C 财务部 → 只标 B；状态列直接写出"部门"
+  // AG Grid 36：一行的所有单元格（包括左侧固定列）都在同一个 .ag-row 里
+  const row = grid.locator('.ag-row', { has: page.locator('[col-id="key"]', { hasText: '000004' }) })
+  await expect(row.locator('[col-id="status"]')).toHaveText('部门')
+  await expect(row.locator('[col-id="v_1_1"]')).toHaveClass(/mylb-cell-diff/)
+  await expect(row.locator('[col-id="v_0_1"]')).not.toHaveClass(/mylb-cell-diff/)
+  await expect(row.locator('[col-id="v_2_1"]')).not.toHaveClass(/mylb-cell-diff/)
+
+  // 切换成按文件分组，刷新后记住选择
+  await page.getByRole('radio', { name: '按文件分组' }).click()
+  await expect(grid.locator('.ag-header-group-cell', { hasText: 'A · 2026年8月花名册.xlsx' })).toBeVisible()
+  await expect(page.getByTestId('file-legend')).toHaveCount(0)
+  await page.reload()
+  await page.getByRole('button', { name: /示例：3 个文件/ }).click()
+  await expect(page.getByRole('button', { name: '下一步' })).toBeEnabled({ timeout: 15_000 })
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '下一步' }).click()
+  await page.getByRole('button', { name: '开始对比' }).click()
+  await expect(page.getByRole('radio', { name: '按文件分组' })).toHaveAttribute('aria-checked', 'true')
+})
+
 test('示例文件：大标题、列名不一致、主键重复/为空', async ({ page }) => {
   await page.goto('/excel-compare')
   await page.getByRole('button', { name: /示例：3 个文件/ }).click()

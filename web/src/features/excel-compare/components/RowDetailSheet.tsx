@@ -65,7 +65,8 @@ export function RowDetailSheet({
                 </tr>
               ))}
               {result.fieldLabels.map((label, k) => {
-                const isDiff = result.diff[k]?.[i] === 1
+                const mask = result.diff[k]?.[i] ?? 0
+                const isDiff = mask !== 0
                 return (
                   <tr key={label} className="border-b last:border-0">
                     <td className={cn('py-2 pr-3', isDiff && 'font-medium')}>{label}</td>
@@ -77,7 +78,10 @@ export function RowDetailSheet({
                           className={cn(
                             'px-2 py-2',
                             !present(idx) && 'bg-diff-missing-bg text-diff-missing-fg',
-                            present(idx) && isDiff && 'bg-diff-changed-bg font-medium text-diff-changed-fg',
+                            // 3 个文件时只标出和多数不同的那个
+                            present(idx) &&
+                              ((mask >> idx) & 1) === 1 &&
+                              'bg-diff-changed-bg font-medium text-diff-changed-fg',
                           )}
                         >
                           {present(idx) ? (v ?? '—') : '—'}

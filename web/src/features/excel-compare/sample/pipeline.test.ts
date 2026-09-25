@@ -46,11 +46,11 @@ describe('示例文件全流程', () => {
 
     expect(r.keys[0]).toBe('000001')
     // 姓名只加了空格、日期只是格式不同：都不算差异
-    expect(r.diff[0]!.includes(1)).toBe(false)
-    expect(r.diff[3]!.includes(1)).toBe(false)
+    expect(r.diff[0]!.some((m) => m !== 0)).toBe(false)
+    expect(r.diff[3]!.some((m) => m !== 0)).toBe(false)
     // 部门和学分有真实差异
-    expect(r.diff[1]!.includes(1)).toBe(true)
-    expect(r.diff[4]!.includes(1)).toBe(true)
+    expect(r.diff[1]!.some((m) => m !== 0)).toBe(true)
+    expect(r.diff[4]!.some((m) => m !== 0)).toBe(true)
     expect(r.summary.missing).toBeGreaterThan(0)
     expect(r.summary.emptyKey).toBe(1)
     expect(r.summary.duplicateKey).toBe(4) // B 里两行 + A、C 各一行

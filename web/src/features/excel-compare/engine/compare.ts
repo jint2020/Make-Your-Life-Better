@@ -144,6 +144,7 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
   const diff = config.compareFields.map(() => new Uint8Array(rowCount))
   const values = tables.map(() => config.compareFields.map(() => new Array<string | null>(rowCount)))
   const norm: string[] = new Array(fileCount)
+  const normFile: number[] = new Array(fileCount)
 
   fieldCols.forEach((cols, k) => {
     const d = diff[k]!
@@ -155,14 +156,12 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
         const src = srcCols[f]
         const raw = r >= 0 && src ? src[r] : undefined
         values[f]![k]![i] = r >= 0 ? displayValue(raw) : null
-        if (r >= 0 && src) norm[n++] = normalizeValue(raw, opts)
-      }
-      for (let j = 1; j < n; j++) {
-        if (norm[j] !== norm[0]) {
-          d[i] = 1
-          break
+        if (r >= 0 && src) {
+          norm[n] = normalizeValue(raw, opts)
+          normFile[n++] = f
         }
       }
+      d[i] = diffMask(norm, normFile, n)
     }
   })
 
@@ -194,7 +193,7 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
   }
   for (let i = 0; i < rowCount; i++) {
     let t = 0
-    if (diff.some((d) => d[i] === 1)) {
+    if (diff.some((d) => d[i] !== 0)) {
       t |= TAG_DIFF
       summary.diff++
     }
@@ -213,6 +212,7 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
     files: tables.map((t) => ({ fileId: t.fileId, fileName: t.fileName })),
     keyLabel: config.keyFields.map((k) => k.label).join(' + '),
     fieldLabels: config.compareFields.map((f) => f.label),
+    fieldFiles: fieldCols.map((cols) => cols.reduce((mask, c, f) => (c >= 0 ? mask | (1 << f) : mask), 0)),
     displayLabels: config.displayFields.map((f) => f.label),
     displayValues,
     excluded,
@@ -224,4 +224,33 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
     summary,
     elapsedMs: performance.now() - start,
   }
+}
+
+/**
+ * 一格的差异掩码：第 f 位为 1 表示要高亮第 f 个文件的值。
+ * 有明确多数值时（比如 3 个文件里 2 个相同）只标出和多数不同的文件，一眼看出"是哪个文件不一样"；
+ * 没有多数值时（2 个文件不同，或 3 个各不相同）所有文件都标。全部相同返回 0。
+ */
+export function diffMask(norm: readonly string[], files: readonly number[], n: number): number {
+  let allSame = true
+  for (let j = 1; j < n; j++) {
+    if (norm[j] !== norm[0]) {
+      allSame = false
+      break
+    }
+  }
+  if (allSame) return 0
+
+  let majority: string | null = null
+  for (let j = 0; j < n && majority == null; j++) {
+    let count = 0
+    for (let m = 0; m < n; m++) if (norm[m] === norm[j]) count++
+    if (count * 2 > n) majority = norm[j]!
+  }
+
+  let mask = 0
+  for (let j = 0; j < n; j++) {
+    if (majority == null || norm[j] !== majority) mask |= 1 << files[j]!
+  }
+  return mask
 }

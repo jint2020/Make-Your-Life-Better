@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { compareTables } from './compare'
+import { compareTables, diffMask } from './compare'
 import {
   DEFAULT_NORMALIZE_OPTIONS,
   TAG_DIFF,
@@ -64,7 +64,7 @@ describe('compareTables：两个文件', () => {
 
   it('逐字段比较，空格不算差异', () => {
     expect(Array.from(r.diff[0]!)).toEqual([0, 0, 0, 0]) // 姓名
-    expect(Array.from(r.diff[1]!)).toEqual([0, 1, 0, 0]) // 部门
+    expect(Array.from(r.diff[1]!)).toEqual([0, 0b11, 0, 0]) // 部门：两个文件不同，两边都标
     expect(r.values[1]![1]![1]).toBe('政企部')
     expect(r.values[1]![0]![2]).toBeNull() // 003 在 B 缺失
   })
@@ -100,10 +100,40 @@ describe('compareTables：三个文件、同时有差异和缺失', () => {
     expect(r.tags[k]).toBe(TAG_MISSING)
   })
 
+  it('有多数值时只标出不一样的那个文件', () => {
+    const i = r.keys.indexOf('002') // 部门：A 市场部、B 政企部、C 市场部
+    expect(r.diff[0]![i]).toBe(0b010)
+  })
+
   it('某个文件没有映射的字段不参与比较', () => {
+    expect(r.fieldFiles).toEqual([0b111, 0b011]) // 姓名在 C 里没有
     const i = r.keys.indexOf('001')
     expect(r.diff[1]![i]).toBe(0)
     expect(r.values[2]![1]![i]).toBeNull()
+  })
+})
+
+describe('diffMask', () => {
+  const mask = (...vals: string[]) => diffMask(vals, vals.map((_, f) => f), vals.length)
+
+  it('全部相同为 0', () => {
+    expect(mask('a', 'a', 'a')).toBe(0)
+    expect(mask('a')).toBe(0)
+  })
+  it('两个文件不同：两边都标', () => {
+    expect(mask('a', 'b')).toBe(0b11)
+  })
+  it('三个文件两个相同：只标少数派', () => {
+    expect(mask('a', 'b', 'a')).toBe(0b010)
+    expect(mask('b', 'a', 'a')).toBe(0b001)
+    expect(mask('a', 'a', 'b')).toBe(0b100)
+  })
+  it('三个文件各不相同：全部标', () => {
+    expect(mask('a', 'b', 'c')).toBe(0b111)
+  })
+  it('按实际文件序号置位（缺失的文件不占位）', () => {
+    // 文件 1 缺失，只有文件 0 和 2 有值且不同
+    expect(diffMask(['a', 'b'], [0, 2], 2)).toBe(0b101)
   })
 })
 
@@ -157,7 +187,7 @@ describe('compareTables：组合主键与展示列', () => {
 
   it('组合主键区分同名的人，身份证不会因精度被当成同一个', () => {
     expect(r.keys).toEqual(['张三 / 440600199001011234', '张三 / 440600199001011235'])
-    expect(Array.from(r.diff[0]!)).toEqual([0, 1])
+    expect(Array.from(r.diff[0]!)).toEqual([0, 0b11])
     expect(r.keyLabel).toBe('姓名 + 身份证')
   })
 

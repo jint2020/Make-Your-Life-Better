@@ -5,5 +5,5 @@ import type { CompareResult } from '../engine/types'
 import type { RowRef } from './shared'
 
 export function StatusCell({ data, result }: CustomCellRendererProps<RowRef> & { result: CompareResult }) {
-  return data ? <RowStatusBadges result={result} i={data.i} /> : null
+  return data ? <RowStatusBadges result={result} i={data.i} showFields /> : null
 }

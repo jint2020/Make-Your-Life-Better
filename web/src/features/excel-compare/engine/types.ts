@@ -96,6 +96,8 @@ export interface CompareResult {
   files: { fileId: string; fileName: string }[]
   keyLabel: string
   fieldLabels: string[]
+  /** fieldFiles[field]：第 f 位为 1 表示第 f 个文件有这个字段（没映射的文件，结果表里不显示那一列） */
+  fieldFiles: number[]
   /** 附带展示列：只展示不比较，取第一个有这条记录的文件的值 */
   displayLabels: string[]
   /** displayValues[field][row] */
@@ -110,7 +112,10 @@ export interface CompareResult {
   presence: Uint8Array
   /** values[file][field][row]：展示用原始文本 */
   values: (string | null)[][][]
-  /** diff[field][row]：1 表示该字段在这一行各文件之间不一致 */
+  /**
+   * diff[field][row]：差异掩码，0 表示各文件一致；否则第 f 位为 1 表示要高亮第 f 个文件的值
+   * （有多数值时只标和多数不同的文件，见 engine/compare.ts 的 diffMask）
+   */
   diff: Uint8Array[]
   summary: CompareSummary
   elapsedMs: number

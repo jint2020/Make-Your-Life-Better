@@ -8,8 +8,13 @@
   background-color: var(--diff-missing-bg);
   color: var(--diff-missing-fg);
 }
-.ag-header-group-cell.mylb-file-group {
+.ag-header-group-cell.mylb-col-group {
   font-weight: 600;
+}
+/* 按字段并排时，每个字段组的第一列加左边线 */
+.ag-cell.mylb-group-start,
+.ag-header-cell.mylb-group-start {
+  border-left: 1px solid var(--ag-border-color);
 }
 .ag-cell.mylb-key-cell {
   font-family: var(--font-mono);
