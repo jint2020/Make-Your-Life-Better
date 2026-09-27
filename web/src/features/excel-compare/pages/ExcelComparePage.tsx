@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { RotateCcwIcon, FileSpreadsheetIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import { ResultStep } from '../components/steps/ResultStep'
 import { SheetStep } from '../components/steps/SheetStep'
 import { UploadStep } from '../components/steps/UploadStep'
 import { Stepper } from '../components/Stepper'
+import { startLocalHistory } from '../history/localHistory'
 import { useCompareStore } from '../state/store'
 
 export function ExcelComparePage() {
@@ -16,6 +18,9 @@ export function ExcelComparePage() {
   const hasFiles = useCompareStore((s) => s.files.length > 0)
   const reset = useCompareStore((s) => s.reset)
   const isResult = step === 3 && result
+
+  // 每次对比成功后自动保存到本机历史
+  useEffect(() => startLocalHistory(), [])
 
   return (
     <div

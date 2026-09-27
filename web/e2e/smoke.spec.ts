@@ -118,6 +118,58 @@ test('完整流程：两个 CSV → 自动配对 → 对比结果', async ({ pag
   expect(all.aoa('对比结果')).toHaveLength(2 + 5)
 })
 
+test('本机历史：对比后自动保存，刷新后还在，可以打开、删除、清空', async ({ page }) => {
+  const runCompare = async () => {
+    await page.getByTestId('file-input').setInputFiles([fixture('名单-GBK.csv'), fixture('名单-UTF8.csv')])
+    await expect(page.getByTestId('file-row').nth(1)).toContainText('CSV')
+    await page.getByRole('button', { name: '下一步' }).click()
+    await page.getByRole('button', { name: '下一步' }).click()
+    await page.getByRole('button', { name: '开始对比' }).click()
+    await expect(await chip(page, '有差异')).toContainText('2')
+  }
+  const history = page.getByTestId('local-history')
+  const items = history.getByTestId('local-history-item')
+
+  await page.goto('/excel-compare')
+  // 还没有记录时不显示
+  await expect(history).toHaveCount(0)
+  await runCompare()
+
+  // 同一组文件重新对比：只更新同一条记录
+  await page.getByRole('button', { name: '调整配置' }).click()
+  await page.getByRole('dialog').getByRole('switch', { name: /忽略大小写/ }).click()
+  await page.getByRole('button', { name: '重新对比' }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+
+  // 刷新页面：历史还在
+  await page.reload()
+  await expect(items).toHaveCount(1)
+  await expect(history).toContainText('名单-GBK.csv · 名单-UTF8.csv')
+  await expect(history).toContainText('2 个文件')
+
+  // 打开：重新解析、重新对比，结果一样
+  await items.first().getByRole('button', { name: '打开' }).click()
+  await expect(await chip(page, '全部')).toContainText('5')
+  await expect(await chip(page, '有差异')).toContainText('2')
+
+  // 从历史打开后再回来，仍然只有一条
+  await page.getByRole('button', { name: '重新开始' }).click()
+  await expect(items).toHaveCount(1)
+
+  // 删除：没有记录后卡片隐藏
+  await items.first().getByRole('button', { name: /^删除/ }).click()
+  await items.first().getByRole('button', { name: '确认删除' }).click()
+  await expect(history).toHaveCount(0)
+
+  // 再对比一次，然后清空
+  await runCompare()
+  await page.getByRole('button', { name: '重新开始' }).click()
+  await expect(items).toHaveCount(1)
+  await history.getByRole('button', { name: '清空' }).click()
+  await history.getByRole('button', { name: '确认清空' }).click()
+  await expect(history).toHaveCount(0)
+})
+
 test('结果页：默认按字段并排，3 个文件时只标出不一样的那个', async ({ page }) => {
   await page.goto('/excel-compare')
   await page.getByRole('button', { name: /示例：3 个文件/ }).click()

@@ -26,6 +26,7 @@ import {
   type SourceFile,
 } from '../../state/store'
 import { CloudTaskList } from '../CloudTaskList'
+import { LocalHistoryList } from '../LocalHistoryList'
 import { FileBadge } from '../FileBadge'
 import { StepFooter } from '../StepFooter'
 
@@ -97,7 +98,7 @@ export function UploadStep() {
   const authenticated = useAuth((s) => s.status === 'authenticated')
   const full = files.length >= MAX_FILES
   const hasFiles = files.length > 0
-  // 已经有文件后，示例卡片就不需要了；右侧只剩云端任务（登录时）
+  // 已经有文件后，本机历史和示例卡片就不需要了；右侧只剩云端任务（登录时）
   const showSidebar = !hasFiles || authenticated
   const canNext = canLeaveUpload(files)
 
@@ -191,6 +192,7 @@ export function UploadStep() {
 
         {showSidebar && (
           <div className="space-y-4">
+            {!hasFiles && <LocalHistoryList />}
             <CloudTaskList />
             {!hasFiles && (
               <Card className="h-fit gap-4">

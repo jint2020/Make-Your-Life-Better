@@ -3,7 +3,7 @@ import { CloudIcon, Loader2Icon, Trash2Icon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { formatSize } from '@/lib/format'
+import { formatDateTime, formatSize } from '@/lib/format'
 import type { CloudTaskSummary } from '@/shared/api/client'
 import { useAuth } from '@/shared/auth/store'
 import { t } from '../copy'
@@ -74,7 +74,7 @@ function CloudTaskListInner() {
                   {task.name}
                 </p>
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  {new Date(task.created_at).toLocaleString()} · {t.cloud.files(task.files.length)} ·{' '}
+                  {formatDateTime(task.created_at)} · {t.cloud.files(task.files.length)} ·{' '}
                   {formatSize(task.total_bytes)}
                 </p>
                 <div className="mt-2 flex gap-2">
