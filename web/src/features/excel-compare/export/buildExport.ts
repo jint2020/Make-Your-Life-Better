@@ -1,5 +1,5 @@
 import { t } from '../copy'
-import { TAG_DIFF, TAG_EQUAL, type CompareResult } from '../engine/types'
+import { cellValue, TAG_DIFF, TAG_EQUAL, type CompareResult } from '../engine/types'
 import { fileLetter, type ColumnLayout } from '../grid/shared'
 import { columnLetter } from '../parse/headers'
 import { XLSX_STYLE, type XlsxCell, type XlsxSheet } from './xlsxWriter'
@@ -44,7 +44,7 @@ export function statusText(result: CompareResult, i: number): string {
 /** 一个格子：文件里没有这一行 → 灰色"—"；这个文件的值和别人不一样 → 标黄 */
 function valueCell(result: CompareResult, f: number, k: number, i: number): XlsxCell {
   if (!isPresent(result, f, i)) return { v: MISSING, s: XLSX_STYLE.missing }
-  const v = result.values[f]?.[k]?.[i] ?? ''
+  const v = cellValue(result, f, k, i) ?? ''
   return isOdd(result, f, k, i) ? { v, s: XLSX_STYLE.diff } : v
 }
 

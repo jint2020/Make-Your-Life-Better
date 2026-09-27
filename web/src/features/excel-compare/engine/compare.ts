@@ -11,6 +11,7 @@ import {
   type ExcludedRow,
   type FieldMapping,
   type ParsedTable,
+  type ValueCodes,
 } from './types'
 
 export class CompareConfigError extends Error {}
@@ -142,20 +143,33 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
   // 3. 逐字段比较
   const fieldCols = config.compareFields.map((fm) => resolveColumns(tables, fm))
   const diff = config.compareFields.map(() => new Uint8Array(rowCount))
-  const values = tables.map(() => config.compareFields.map(() => new Array<string | null>(rowCount)))
+  // 展示值按字段做字典编码（见 CompareResult.valueDict），下标 0 表示空
+  const valueDict: string[][] = config.compareFields.map(() => [''])
+  const wideCodes = tables.map(() => config.compareFields.map(() => new Uint32Array(rowCount)))
   const norm: string[] = new Array(fileCount)
   const normFile: number[] = new Array(fileCount)
 
   fieldCols.forEach((cols, k) => {
     const d = diff[k]!
     const srcCols = tables.map((t, f) => col(t, cols[f]!))
+    const dict = valueDict[k]!
+    const codeOf = new Map<string, number>()
     for (let i = 0; i < rowCount; i++) {
       let n = 0
       for (let f = 0; f < fileCount; f++) {
         const r = rowOf[f]![i]!
         const src = srcCols[f]
         const raw = r >= 0 && src ? src[r] : undefined
-        values[f]![k]![i] = r >= 0 ? displayValue(raw) : null
+        const text = r >= 0 ? displayValue(raw) : null
+        if (text != null) {
+          let code = codeOf.get(text)
+          if (code === undefined) {
+            code = dict.length
+            dict.push(text)
+            codeOf.set(text, code)
+          }
+          wideCodes[f]![k]![i] = code
+        }
         if (r >= 0 && src) {
           norm[n] = normalizeValue(raw, opts)
           normFile[n++] = f
@@ -219,7 +233,8 @@ export function compareTables(tables: ParsedTable[], config: CompareConfig): Com
     keys,
     tags,
     presence,
-    values,
+    valueDict,
+    valueCodes: wideCodes.map((perField) => perField.map((codes, k) => narrowCodes(codes, valueDict[k]!.length))),
     diff,
     summary,
     elapsedMs: performance.now() - start,
@@ -253,4 +268,11 @@ export function diffMask(norm: readonly string[], files: readonly number[], n: n
     if (majority == null || norm[j] !== majority) mask |= 1 << files[j]!
   }
   return mask
+}
+
+/** 字典不大时换成更窄的类型：大部分字段（部门、岗位…）只要 1 个字节 */
+function narrowCodes(codes: Uint32Array, dictSize: number): ValueCodes {
+  if (dictSize <= 0xff) return Uint8Array.from(codes)
+  if (dictSize <= 0xffff) return Uint16Array.from(codes)
+  return codes
 }

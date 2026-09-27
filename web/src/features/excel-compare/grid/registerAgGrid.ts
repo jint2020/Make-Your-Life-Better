@@ -1,27 +1,24 @@
 import {
   CellStyleModule,
-  ClientSideRowModelApiModule,
-  ClientSideRowModelModule,
   ColumnApiModule,
-  ExternalFilterModule,
+  InfiniteRowModelModule,
   LocaleModule,
   ModuleRegistry,
-  RowApiModule,
   RowStyleModule,
   TooltipModule,
   ValidationModule,
 } from 'ag-grid-community'
 
-/** 只注册用到的模块，控制包体积 */
+/**
+ * 只注册用到的模块，控制包体积。
+ * 注意：没注册的模块，对应的 API 在生产构建里会静默返回 undefined（开发时 ValidationModule 会报错）
+ */
 ModuleRegistry.registerModules([
-  ClientSideRowModelModule,
-  ExternalFilterModule,
+  // 结果表用无限滚动行模型（见 ResultGrid），不用客户端行模型
+  InfiniteRowModelModule,
   CellStyleModule,
   RowStyleModule,
   ColumnApiModule,
-  // 显示行数（getDisplayedRowCount）、导出时按显示顺序取行（forEachNodeAfterFilterAndSort）
-  RowApiModule,
-  ClientSideRowModelApiModule,
   TooltipModule,
   LocaleModule,
   ...(import.meta.env.DEV ? [ValidationModule] : []),

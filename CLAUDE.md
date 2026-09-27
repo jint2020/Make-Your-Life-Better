@@ -42,6 +42,7 @@ uv run alembic revision --autogenerate -m "说明"
 
 Full stack from production images (HTTP on :8080): `docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build`.
 
+- If your shell has `NODE_ENV=development` (this cloud environment does), `pnpm build` bundles React's development build, which is much slower. Build with `NODE_ENV=production pnpm build` before measuring performance. The Playwright webServer already forces production, and the perf E2E asserts that no main-thread long task exceeds 250 ms.
 - `compare.perf.test.ts` runs the engine on 3 × 100k rows × 20 cols. It is part of `pnpm test` and takes a few seconds.
 - For E2E with an existing Chromium, set `PW_CHROMIUM_PATH=/path/to/chrome pnpm e2e`. In this cloud environment that is `/opt/pw-browsers/chromium`.
 - E2E fixtures are uploaded as in-memory buffers rather than file paths, because Chromium cannot read Chinese filenames without a UTF-8 locale. Follow the same pattern in new tests. For the same reason, the Playwright configs launch Chromium with `LANG=C.UTF-8`; without it, Chinese download filenames become "download".
@@ -97,17 +98,21 @@ Pipeline:
   - `compare.ts` handles composite-key matching and per-field comparison. Rows with duplicate or empty keys are set aside, not compared.
   - Tables are **columnar** (`ParsedTable`).
   - A row can carry several status tags at once. There is no single baseline file.
+  - Displayed values are dictionary-encoded per field: `valueDict[field]` holds the unique strings, and `valueCodes[file][field]` is a `Uint8/16/32Array` of indices, where 0 means empty. Read a cell with `cellValue(result, f, k, i)`. This keeps the Worker → main thread transfer cheap; millions of strings took 160 ms+ to deserialize.
   - `diff[field][row]` is a per-file bitmask, not 0/1: bit f set means "highlight file f's value". With 3 files and a majority value, only the minority file is set (`diffMask`). Test "has a diff" with `!== 0`. `fieldFiles[field]` is the bitmask of files that map the field.
 - `state/store.ts` is the zustand wizard store: 4 steps, upload → sheet/header row → fields → result.
   - `state/fields.ts` holds the field-mapping logic: auto-pairing same-name columns, bulk role set/undo, validation, and `toCompareConfig`.
   - Components read the store through `state/hooks.ts`.
 - `grid/` is the read-only AG Grid Community result table. Modules are registered explicitly in `registerAgGrid.ts`; `ValidationModule` is registered only in dev. A grid API call whose module is not registered returns `undefined` in production builds instead of throwing, so register the module when you use a new API.
+  - It uses the **infinite row model**, not client-side, because the client-side model builds a node per row (100 ms+ long tasks at 100k rows).
+  - Filtering by tag or key search and sorting (including multi-column) are done by `grid/rowOrder.ts` on `Int32Array`s of row indices, cached per sort model. The datasource hands out blocks of 200 rows.
+  - `displayedRowsRef` returns a *copy* of the ordered rows, because export transfers the array to the worker.
   - Columns are grouped by field first by default (`layout: 'field'`; each field's A / B / C side by side); users can switch to file-first, and the choice is saved in localStorage. Column ids are `v_<file>_<field>`.
   - In AG Grid 36, pinned and centre cells of a row live inside the same `.ag-row` element. E2E tests locate a row with `.ag-row` that has a `[col-id="key"]` child.
 - `export/` builds the xlsx export inside the Worker. It does **not** use ExcelJS, which took 198 s and 3.6 GB for 100k rows. Instead:
   - `xlsxWriter.ts` is a minimal writer: shared strings, fflate streaming zip, fixed styles (`XLSX_STYLE`), merges, frozen panes, autofilter and column widths.
   - `buildExport.ts` maps a `CompareResult` to three sheets: the result, per-diff details, and the excluded rows. It follows the page's layout and highlight rules.
-  - The worker keeps `lastResult` after `compare()`. The main thread sends only the displayed row indices in display order (`ResultGrid`'s `displayedRowsRef`, which needs `ClientSideRowModelApiModule`) and gets the file bytes back.
+  - The worker keeps `lastResult` after `compare()`. The main thread sends only the displayed row indices in display order (`ResultGrid`'s `displayedRowsRef`) and gets the file bytes back.
   - Both modules are dynamically imported on first export.
   - Unit tests read the output back with SheetJS; openpyxl was used as a stricter manual check.
 - `cloud/cloud.ts` handles save, list, open and delete for cloud tasks.

@@ -16,6 +16,9 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
   webServer: {
     command: 'pnpm build && pnpm preview --port 4173 --strictPort',
+    // 固定用正式构建：shell 里设了 NODE_ENV=development 时，Vite 会打出 React 开发版，
+    // 运行慢很多，性能断言就不准了
+    env: { NODE_ENV: 'production' },
     url: 'http://localhost:4173',
     reuseExistingServer: true,
     timeout: 120_000,

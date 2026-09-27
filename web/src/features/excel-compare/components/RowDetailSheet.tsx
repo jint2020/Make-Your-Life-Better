@@ -1,7 +1,7 @@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { t } from '../copy'
-import type { CompareResult } from '../engine/types'
+import { cellValue, type CompareResult } from '../engine/types'
 import { RowStatusBadges } from './RowStatusBadges'
 import { FileBadge } from './FileBadge'
 
@@ -71,7 +71,7 @@ export function RowDetailSheet({
                   <tr key={label} className="border-b last:border-0">
                     <td className={cn('py-2 pr-3', isDiff && 'font-medium')}>{label}</td>
                     {result.files.map((f, idx) => {
-                      const v = result.values[idx]?.[k]?.[i]
+                      const v = cellValue(result, idx, k, i)
                       return (
                         <td
                           key={f.fileId}
