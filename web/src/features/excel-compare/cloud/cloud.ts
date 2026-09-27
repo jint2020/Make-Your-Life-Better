@@ -4,6 +4,11 @@ import { getOriginalFile, useCompareStore, type SavedCompareConfig } from '../st
 
 export const TOOL_ID = 'excel-compare'
 
+/** 任务标题：各文件名连起来（云端和本机历史共用） */
+export function taskTitle(fileNames: string[]): string {
+  return fileNames.join(' · ').slice(0, 200)
+}
+
 type Outcome = { ok: true } | { ok: false; message: string }
 
 /** 上传当前任务的原始文件和配置 */
@@ -16,7 +21,7 @@ export async function saveCurrentTask(): Promise<Outcome> {
   const { error, response } = await api.POST('/api/cloud/tasks', {
     body: {
       tool_id: TOOL_ID,
-      name: state.files.map((f) => f.name).join(' · ').slice(0, 200),
+      name: taskTitle(state.files.map((f) => f.name)),
       config: JSON.stringify(config),
       files: files as unknown as string[],
     },
@@ -44,7 +49,7 @@ export async function deleteTask(id: string): Promise<void> {
   if (!response.ok) throw new Error(t.cloud.openFailed)
 }
 
-function isSavedConfig(value: unknown): value is SavedCompareConfig {
+export function isSavedConfig(value: unknown): value is SavedCompareConfig {
   return !!value && typeof value === 'object' && (value as { version?: unknown }).version === 1
 }
 

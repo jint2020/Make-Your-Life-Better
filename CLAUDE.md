@@ -76,7 +76,7 @@ Full stack from production images (HTTP on :8080): `docker compose --env-file lo
 
 **Shared layer (`src/shared/`):**
 - `worker/createWorkerClient.ts` is a Comlink wrapper. It creates the worker lazily and recreates it after a crash (for example OOM).
-- `storage/` holds safe localStorage helpers and an IndexedDB task store (`idb`, tested with `fake-indexeddb`). The store is built, but the history UI is not wired up yet.
+- `storage/` holds safe localStorage helpers and an IndexedDB task store (`idb`, tested with `fake-indexeddb`). Excel compare uses the task store for its local history.
 - `theme/` holds tweakcn CSS presets (`presets/<id>.css` plus an entry in `presets.ts`), light/dark mode, and `agGridTheme.ts`, which bridges the same CSS variables to AG Grid's Theming API. The semantic `--diff-*` colors follow only light/dark and are never overridden by presets.
 - `auth/store.ts` holds the login state: `loading | anonymous | authenticated | unavailable`. `unavailable` covers no backend at all, for example `pnpm e2e` against a static preview. In that state, hide every account or cloud entry point and keep the tools working.
 - `copy/zh.ts` holds global UI strings. Each feature also has its own `copy.ts`. Keep user-facing text in these files, not inline in components.
@@ -114,6 +114,11 @@ Pipeline:
   - Saving uploads the original `File`s. The store keeps them in a module-level `originals` map, outside zustand state; parsing still happens only in the Worker.
   - It also uploads `SavedCompareConfig` from `store.snapshot()`.
   - Opening downloads the files and calls `store.restore()`. That replays inspect → encoding/sheet/header row → `extractAll`, then reapplies the saved field rows only if the headers signature still matches, and finally runs the compare.
+- `history/localHistory.ts` is the local history.
+  - It subscribes to the compare store; every new `result` auto-saves the original files as Blobs plus `SavedCompareConfig`, the same format as cloud saves. Parsed data is not stored.
+  - It picks the record with `pickRecordId`: the same file set updates one record, and a task opened from history updates its own record.
+  - Opening reuses `store.restore()`.
+  - `startLocalHistory()` is called once from `ExcelComparePage`.
 - `sample/makeSampleFiles.ts` generates deliberately messy sample files. The UI uses them, and so does `sample/pipeline.test.ts`.
 
 Date handling: SheetJS dates come out as UTC. They are converted to the same wall-clock time in the local timezone. Numeric cells with zero-padded display formats are read as their displayed text.
