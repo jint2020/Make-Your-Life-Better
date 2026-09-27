@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { compareTables, diffMask } from './compare'
+import { cellValue } from './types'
 import {
   DEFAULT_NORMALIZE_OPTIONS,
   TAG_DIFF,
@@ -65,8 +66,8 @@ describe('compareTables：两个文件', () => {
   it('逐字段比较，空格不算差异', () => {
     expect(Array.from(r.diff[0]!)).toEqual([0, 0, 0, 0]) // 姓名
     expect(Array.from(r.diff[1]!)).toEqual([0, 0b11, 0, 0]) // 部门：两个文件不同，两边都标
-    expect(r.values[1]![1]![1]).toBe('政企部')
-    expect(r.values[1]![0]![2]).toBeNull() // 003 在 B 缺失
+    expect(cellValue(r, 1, 1, 1)).toBe('政企部')
+    expect(cellValue(r, 1, 0, 2)).toBeNull() // 003 在 B 缺失
   })
 
   it('标签和汇总', () => {
@@ -109,7 +110,7 @@ describe('compareTables：三个文件、同时有差异和缺失', () => {
     expect(r.fieldFiles).toEqual([0b111, 0b011]) // 姓名在 C 里没有
     const i = r.keys.indexOf('001')
     expect(r.diff[1]![i]).toBe(0)
-    expect(r.values[2]![1]![i]).toBeNull()
+    expect(cellValue(r, 2, 1, i)).toBeNull()
   })
 })
 
@@ -202,5 +203,38 @@ describe('compareTables：配置错误', () => {
     expect(() =>
       compareTables([A, B], config(2, { keyFields: [field('工号', '工号', null)] })),
     ).toThrow(/没有映射/)
+  })
+})
+
+describe('compareTables：展示值的字典编码', () => {
+  const P = table('P', ['工号', '部门'], [
+    ['001', '财务部'],
+    ['002', '财务部'],
+    ['003', null],
+  ])
+  const Q = table('Q', ['工号', '部门'], [
+    ['001', '财务部'],
+    ['002', '市场部'],
+  ])
+  const r = compareTables([P, Q], config(2, { keyFields: [field('工号', '工号', '工号')], compareFields: [field('部门', '部门', '部门')] }))
+
+  it('每个字段的值只存一份，各文件共用同一个字典', () => {
+    expect(r.valueDict[0]).toEqual(['', '财务部', '市场部'])
+    expect(r.valueCodes[0]![0]).toBeInstanceOf(Uint8Array)
+  })
+
+  it('cellValue 读回原值；空单元格和缺失的行都是 null', () => {
+    expect([0, 1, 2].map((i) => cellValue(r, 0, 0, i))).toEqual(['财务部', '财务部', null])
+    expect([0, 1, 2].map((i) => cellValue(r, 1, 0, i))).toEqual(['财务部', '市场部', null])
+  })
+
+  it('字典超过 255 个值时换成更宽的类型', () => {
+    const rows = Array.from({ length: 300 }, (_, i) => [String(i), `值${i}`])
+    const big = compareTables(
+      [table('A', ['id', 'v'], rows), table('B', ['id', 'v'], rows)],
+      config(2, { keyFields: [field('id', 'id', 'id')], compareFields: [field('v', 'v', 'v')] }),
+    )
+    expect(big.valueCodes[0]![0]).toBeInstanceOf(Uint16Array)
+    expect(cellValue(big, 1, 0, 299)).toBe('值299')
   })
 })

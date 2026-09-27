@@ -1,25 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react'
 import { AgGridReact } from 'ag-grid-react'
-import type { ColDef, ColGroupDef, GridApi, IRowNode } from 'ag-grid-community'
+import type { ColDef, ColGroupDef, IDatasource } from 'ag-grid-community'
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale'
 
 import { agGridTheme } from '@/shared/theme/agGridTheme'
-import { TAG_DIFF, TAG_EQUAL, TAG_MISSING, type CompareResult } from '../engine/types'
+import { cellValue, type CompareResult } from '../engine/types'
 import { t } from '../copy'
+import { filterRows, sortRows, type SortItem, type TagFilter } from './rowOrder'
 import { fileLetter, type ColumnLayout, type RowRef } from './shared'
 import { StatusCell } from './StatusCell'
 import './registerAgGrid'
 import './grid.css'
 
-export type TagFilter = 'all' | 'diff' | 'missing' | 'equal'
-
+export type { TagFilter } from './rowOrder'
 export type { ColumnLayout } from './shared'
 
-const TAG_MASK: Record<Exclude<TagFilter, 'all'>, number> = {
-  diff: TAG_DIFF,
-  missing: TAG_MISSING,
-  equal: TAG_EQUAL,
-}
+/** 无限滚动行模型每次取多少行 */
+const BLOCK_SIZE = 200
 
 interface ResultGridProps {
   result: CompareResult
@@ -29,15 +26,19 @@ interface ResultGridProps {
   layout: ColumnLayout
   onRowClick?: (rowIndex: number) => void
   onVisibleCountChange?: (n: number) => void
-  /** 导出用：取当前筛选、排序后显示的行（结果里的行下标，按显示顺序） */
+  /** 导出用：取当前筛选、排序后显示的行（结果里的行下标，按显示顺序）。每次返回新数组，调用方可以转交给 Worker */
   displayedRowsRef?: RefObject<(() => Int32Array) | null>
 }
 
 const LOCALE = { ...AG_GRID_LOCALE_CN, noRowsToShow: t.result.empty }
 
 /**
- * 对比结果表。rowData 只放行号，值从列式数组里取。
+ * 对比结果表。行只放行号，值从列式数组里取。
  * 列默认按"字段为主、文件为次"分组（同一字段的 A / B / C 挨在一起，最好比较），也可以切换成按文件分组。
+ *
+ * 用 AG Grid 的"无限滚动"行模型，而不是默认的客户端行模型：客户端行模型要给每一行建节点，
+ * 10 万行时初始化、切换筛选都要卡 100ms 以上；无限滚动只给看得见的那一段建节点。
+ * 筛选、排序由 rowOrder.ts 在行号数组上算好，表格按需来取。
  */
 export function ResultGrid({
   result,
@@ -49,13 +50,38 @@ export function ResultGrid({
   onVisibleCountChange,
   displayedRowsRef,
 }: ResultGridProps) {
-  const apiRef = useRef<GridApi<RowRef> | null>(null)
-  // AG Grid 的外部筛选回调读这个 ref，回调本身保持稳定
-  const filterRef = useRef({ tagFilter, keySearch })
+  const filtered = useMemo(() => filterRows(result, tagFilter, keySearch), [result, tagFilter, keySearch])
 
-  const rowData = useMemo<RowRef[]>(
-    () => Array.from({ length: result.keys.length }, (_, i) => ({ i })),
-    [result],
+  // 排好序的行号按排序设置缓存：滚动时反复取数据不用重排
+  const sortCache = useRef<{ source: Int32Array; key: string; rows: Int32Array } | null>(null)
+  const lastSortModel = useRef<readonly SortItem[]>([])
+  const orderedRows = useCallback(
+    (sortModel: readonly SortItem[]): Int32Array => {
+      const key = JSON.stringify(sortModel)
+      const cached = sortCache.current
+      if (cached && cached.source === filtered && cached.key === key) return cached.rows
+      const rows = sortRows(result, filtered, sortModel)
+      sortCache.current = { source: filtered, key, rows }
+      return rows
+    },
+    [result, filtered],
+  )
+
+  // 筛选或搜索变了就换一个数据源，表格会清掉缓存、从头重新取
+  const datasource = useMemo<IDatasource>(
+    () => ({
+      rowCount: filtered.length,
+      getRows(params) {
+        const sortModel = params.sortModel as SortItem[]
+        lastSortModel.current = sortModel
+        const rows = orderedRows(sortModel)
+        const end = Math.min(params.endRow, rows.length)
+        const block: RowRef[] = []
+        for (let pos = params.startRow; pos < end; pos++) block.push({ i: rows[pos]! })
+        params.successCallback(block, rows.length)
+      },
+    }),
+    [filtered, orderedRows],
   )
 
   const fieldHasDiff = useMemo(() => result.diff.map((col) => col.some((m) => m !== 0)), [result])
@@ -92,7 +118,7 @@ export function ResultGrid({
       flex: 1,
       minWidth: 112,
       hide: onlyDiffColumns && !fieldHasDiff[k],
-      valueGetter: (p) => (p.data ? result.values[f]?.[k]?.[p.data.i] : null),
+      valueGetter: (p) => (p.data ? cellValue(result, f, k, p.data.i) : null),
       valueFormatter: (p) => (p.value == null ? t.result.missingCell : String(p.value)),
       cellClassRules: {
         'mylb-cell-missing': (p) => !!p.data && !(((result.presence[p.data.i] ?? 0) >> f) & 1),
@@ -132,60 +158,32 @@ export function ResultGrid({
     return [keyCol, statusCol, ...displayCols, ...groups]
   }, [result, onlyDiffColumns, fieldHasDiff, layout])
 
-  const isExternalFilterPresent = useCallback(
-    () => filterRef.current.tagFilter !== 'all' || filterRef.current.keySearch.trim() !== '',
-    [],
-  )
-
-  const doesExternalFilterPass = useCallback(
-    (node: IRowNode<RowRef>) => {
-      if (!node.data) return false
-      const { tagFilter: tf, keySearch: ks } = filterRef.current
-      const i = node.data.i
-      if (tf !== 'all' && !((result.tags[i] ?? 0) & TAG_MASK[tf])) return false
-      const q = ks.trim()
-      if (q && !result.keys[i]?.includes(q)) return false
-      return true
-    },
-    [result],
-  )
-
+  // 行数变了（切换筛选、搜索）就通知外面
   useEffect(() => {
-    filterRef.current = { tagFilter, keySearch }
-    const api = apiRef.current
-    if (!api) return
-    api.onFilterChanged()
-    onVisibleCountChange?.(api.getDisplayedRowCount())
-  }, [tagFilter, keySearch, onVisibleCountChange])
+    onVisibleCountChange?.(filtered.length)
+  }, [filtered, onVisibleCountChange])
+
+  // 导出：当前筛选、排序后的全部行（不只是已经滚动加载过的）。
+  // 返回拷贝：导出会把数组转交（transfer）给 Worker，转交后原数组就不能用了，不能把表格自己缓存的那份交出去
+  useEffect(() => {
+    if (!displayedRowsRef) return
+    displayedRowsRef.current = () => orderedRows(lastSortModel.current).slice()
+  }, [displayedRowsRef, orderedRows])
 
   return (
     <AgGridReact<RowRef>
       theme={agGridTheme}
       localeText={LOCALE}
-      rowData={rowData}
+      rowModelType="infinite"
+      datasource={datasource}
+      cacheBlockSize={BLOCK_SIZE}
       columnDefs={columnDefs}
       defaultColDef={{ sortable: true, resizable: true, suppressMovable: true }}
       getRowId={(p) => String(p.data.i)}
-      isExternalFilterPresent={isExternalFilterPresent}
-      doesExternalFilterPass={doesExternalFilterPass}
       suppressFieldDotNotation
       animateRows={false}
       rowClass={onRowClick ? 'cursor-pointer' : undefined}
       onRowClicked={(e) => e.data && onRowClick?.(e.data.i)}
-      onGridReady={(e) => {
-        apiRef.current = e.api
-        if (displayedRowsRef) {
-          displayedRowsRef.current = () => {
-            const rows: number[] = []
-            e.api.forEachNodeAfterFilterAndSort((node) => {
-              if (node.data) rows.push(node.data.i)
-            })
-            return Int32Array.from(rows)
-          }
-        }
-        e.api.onFilterChanged()
-        onVisibleCountChange?.(e.api.getDisplayedRowCount())
-      }}
     />
   )
 }

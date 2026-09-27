@@ -72,6 +72,9 @@ export interface CompareSummary {
   emptyKey: number
 }
 
+/** 字典编码的下标数组：字典小时用更窄的类型省内存 */
+export type ValueCodes = Uint8Array | Uint16Array | Uint32Array
+
 /** 行标签位掩码 */
 export const TAG_EQUAL = 1
 export const TAG_DIFF = 2
@@ -110,8 +113,16 @@ export interface CompareResult {
   tags: Uint8Array
   /** 每行在各文件中是否存在：第 f 位为 1 表示存在于第 f 个文件 */
   presence: Uint8Array
-  /** values[file][field][row]：展示用原始文本 */
-  values: (string | null)[][][]
+  /**
+   * 展示用的原始文本，按字段做了字典编码（用 cellValue() 读）：
+   * valueDict[field] 是这个字段出现过的所有值（去重，下标 0 空着），
+   * valueCodes[file][field][row] 是值在字典里的下标，0 表示空。
+   *
+   * 为什么不直接存字符串：3 个文件 × 20 列 × 10 万行是几百万个字符串，
+   * 从 Worker 传到主线程时逐个重建要 160ms 以上，会卡住页面；编码后大部分是类型化数组，几乎不花时间
+   */
+  valueDict: string[][]
+  valueCodes: ValueCodes[][]
   /**
    * diff[field][row]：差异掩码，0 表示各文件一致；否则第 f 位为 1 表示要高亮第 f 个文件的值
    * （有多数值时只标和多数不同的文件，见 engine/compare.ts 的 diffMask）
@@ -119,4 +130,10 @@ export interface CompareResult {
   diff: Uint8Array[]
   summary: CompareSummary
   elapsedMs: number
+}
+
+/** 读结果里文件 f、字段 k、第 i 行的展示文本；空值或这一行不在这个文件里时返回 null */
+export function cellValue(result: CompareResult, f: number, k: number, i: number): string | null {
+  const code = result.valueCodes[f]?.[k]?.[i] ?? 0
+  return code === 0 ? null : (result.valueDict[k]?.[code] ?? null)
 }

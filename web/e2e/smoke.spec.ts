@@ -116,6 +116,17 @@ test('完整流程：两个 CSV → 自动配对 → 对比结果', async ({ pag
   await (await chip(page, '全部')).click()
   const all = await exportAndRead(page)
   expect(all.aoa('对比结果')).toHaveLength(2 + 5)
+  const keys = all.aoa('对比结果').slice(2).map((r) => r[0] as string)
+
+  // 点列头排序（升序 → 降序）：表格和导出的顺序都跟着变
+  const header = page.getByRole('columnheader', { name: '工号' })
+  await header.click()
+  await header.click()
+  const descending = [...keys].sort().reverse()
+  // 无限滚动行模型下 DOM 里的行不一定按显示顺序排，按 row-index 找第一行
+  await expect(grid.locator('.ag-row[row-index="0"] [col-id="key"]')).toHaveText(descending[0]!)
+  const sorted = await exportAndRead(page)
+  expect(sorted.aoa('对比结果').slice(2).map((r) => r[0])).toEqual(descending)
 })
 
 test('本机历史：对比后自动保存，刷新后还在，可以打开、删除、清空', async ({ page }) => {
@@ -278,12 +289,24 @@ test('性能：3 个文件 × 10 万行', async ({ page }) => {
   await page.getByRole('button', { name: '下一步' }).click()
   await expect(page.getByLabel('工号 的用途')).toHaveValue('key')
 
+  // 记录主线程长任务：结果传回主线程、渲染结果表都不能长时间卡住页面
+  await page.evaluate(() => {
+    const w = window as unknown as { __longTasks: number[] }
+    w.__longTasks = []
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) w.__longTasks.push(Math.round(e.duration))
+    }).observe({ type: 'longtask' })
+  })
   const started = Date.now()
   await page.getByRole('button', { name: '开始对比' }).click()
   await expect(page.getByTestId('result-grid').locator('.ag-row').first()).toBeVisible({ timeout: 30_000 })
   const elapsed = Date.now() - started
-  console.log(`10 万行 × 3：点"开始对比"到出结果 ${elapsed} ms`)
+  await page.waitForTimeout(2_000)
+  const longTasks = await page.evaluate(() => (window as unknown as { __longTasks: number[] }).__longTasks)
+  console.log(`10 万行 × 3：点"开始对比"到出结果 ${elapsed} ms，主线程长任务 ${JSON.stringify(longTasks)} ms`)
   expect(elapsed).toBeLessThan(5_000)
+  // 本机实测最长约 90ms；阈值给 CI 留余量，但能抓住以前那种 300ms 以上的卡顿
+  expect(Math.max(0, ...longTasks)).toBeLessThan(250)
 
   // 最坏情况：全部行一起导出
   await (await chip(page, '全部')).click()
