@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "Body_convertFile": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_convertFile",
+        "type": "object"
+      },
       "Body_createCloudTask": {
         "properties": {
           "config": {
@@ -177,6 +191,31 @@
           "code"
         ],
         "title": "CodeLoginRequest",
+        "type": "object"
+      },
+      "ConvertResult": {
+        "properties": {
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "enum": [
+                "table_truncated",
+                "unreadable_glyphs"
+              ],
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "markdown",
+          "warnings"
+        ],
+        "title": "ConvertResult",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1070,6 +1109,74 @@
         "summary": "Usage",
         "tags": [
           "cloud"
+        ]
+      }
+    },
+    "/api/convert": {
+      "post": {
+        "description": "把上传的文件转换成 Markdown。文件只在内存里处理，响应返回后不留任何痕迹。",
+        "operationId": "convertFile",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "mylb_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mylb Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_convertFile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvertResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "413": {
+            "description": "文件太大"
+          },
+          "415": {
+            "description": "不支持的格式"
+          },
+          "422": {
+            "description": "转换失败"
+          },
+          "429": {
+            "description": "上一个还在转换，或者转换太频繁"
+          },
+          "503": {
+            "description": "转换服务不可用"
+          }
+        },
+        "summary": "Convert File",
+        "tags": [
+          "convert"
         ]
       }
     },

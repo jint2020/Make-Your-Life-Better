@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     max_files_per_task: int = 10
     max_config_bytes: int = 1 * MB
 
+    # 文件转 Markdown：转发给独立的 converter 服务（顶层 converter/，见 docs/design.md 第三节）
+    converter_url: str = "http://localhost:8001"
+    convert_max_file_bytes: int = 20 * MB
+    convert_hourly_limit: int = 60
+    convert_daily_limit: int = 300
+    convert_request_timeout_seconds: float = 100
+    # 所有用户合计同时转发给 converter 的请求数上限（每个在途请求在内存里占着最多一个文件大小）
+    convert_max_in_flight: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

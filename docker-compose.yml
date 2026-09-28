@@ -3,6 +3,7 @@
 #   docker compose pull && docker compose up -d
 #
 # 只有 web（Caddy）对外开放 80/443；server、postgres、minio 都在内部网络里。
+# converter 在单独的 converter 网络里，只和 server 相通，不能访问外网，也不挂任何凭据。
 
 services:
   web:
@@ -15,6 +16,8 @@ services:
       - "443:443/udp"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?在 .env 里填 SITE_ADDRESS（域名）}
+      # /api/convert 的请求体上限，要比 CONVERT_MAX_FILE_BYTES 多留出 multipart 开销
+      CONVERT_BODY_LIMIT: ${CONVERT_BODY_LIMIT:-21MiB}
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -46,11 +49,23 @@ services:
       USER_QUOTA_BYTES: ${USER_QUOTA_BYTES:-524288000}
       USER_MAX_TASKS: ${USER_MAX_TASKS:-50}
       MAX_FILE_BYTES: ${MAX_FILE_BYTES:-52428800}
+      # 文件转 Markdown：converter 只在内部网络里，用服务名访问
+      CONVERTER_URL: http://converter:8001
+      # 不填用默认值：单文件 20 MB、每小时 60 次、每天 300 次、转换超时 100 秒、全局同时 10 个
+      CONVERT_MAX_FILE_BYTES: ${CONVERT_MAX_FILE_BYTES:-20971520}
+      CONVERT_HOURLY_LIMIT: ${CONVERT_HOURLY_LIMIT:-60}
+      CONVERT_DAILY_LIMIT: ${CONVERT_DAILY_LIMIT:-300}
+      CONVERT_REQUEST_TIMEOUT_SECONDS: ${CONVERT_REQUEST_TIMEOUT_SECONDS:-100}
+      CONVERT_MAX_IN_FLIGHT: ${CONVERT_MAX_IN_FLIGHT:-10}
+    networks:
+      - default
+      - converter
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      # 不等 converter 健康：这个工具挂了不该拖慢 server 启动，见 docs/design.md 第三节
 
   postgres:
     image: postgres:17-alpine
@@ -83,6 +98,36 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  converter:
+    # 文件转 Markdown（见 docs/design.md 第三节）：不挂任何凭据、不接外网，阅后即焚
+    image: ghcr.io/jint2020/make-your-life-better-converter:${APP_VERSION:-latest}
+    build: ./converter
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cpus: 1.5
+    mem_limit: 2g
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - converter
+    healthcheck:
+      # 启动时要先转一个样例预热（约 13 秒），预热完才算健康，所以 start_period 给得宽松
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+networks:
+  # server 留在隐式的 default 网络里（跟 web/postgres/minio 一样），另外再加入 converter 网络
+  converter:
+    internal: true
 
 volumes:
   caddy_data:

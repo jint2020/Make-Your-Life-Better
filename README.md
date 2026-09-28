@@ -1,6 +1,6 @@
 # Make Your Life Better
 
-浏览器里的提效工具集。默认数据只在本机处理：解析和对比都在浏览器里完成。
+浏览器里的提效工具集。默认数据只在本机处理：解析和对比都在浏览器里完成。唯一的例外是「文件转 Markdown」：文件会上传到服务器转换，转完立即删除（页面上会明确告知）。
 
 设计决策见 [docs/design.md](docs/design.md)。
 
@@ -10,7 +10,7 @@ Vite 8 · React 19 · TypeScript（strict）· zustand · SheetJS 0.20 · PapaPa
 
 ## 开发
 
-仓库分成 `web/`（前端，Vite）和 `server/`（后端，FastAPI）。架构见设计文档第三节。
+仓库分成 `web/`（前端，Vite）、`server/`（后端，FastAPI）和 `converter/`（文件转 Markdown 服务，markitdown）。架构见设计文档第三、四节。
 
 ### 前端
 
@@ -29,7 +29,7 @@ pnpm build
 
 ### 后端
 
-需要 [uv](https://docs.astral.sh/uv/) 和 Docker。依赖服务（PostgreSQL、MinIO、Mailpit）用 Docker 起，后端在本机跑：
+需要 [uv](https://docs.astral.sh/uv/) 和 Docker。依赖服务（PostgreSQL、MinIO、Mailpit、converter）用 Docker 起，后端在本机跑：
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d   # 依赖服务
@@ -46,6 +46,9 @@ uv run ruff check . && uv run ruff format .      # 检查、格式化
 
 - MinIO 控制台：http://localhost:9001（mylb / mylb-dev-secret）
 - Mailpit 收件箱：http://localhost:8025
+- converter（文件转 Markdown）：http://localhost:8001，本机跑的 server 默认就指向它，不用额外配置
+
+converter 单独开发时（在 `converter/` 目录下）：`uv sync`、`uv run fastapi dev app/main.py`（:8001）、`uv run pytest`、`uv run ruff check .`。
 
 新增数据库迁移：`uv run alembic revision --autogenerate -m "说明"`，生成后检查一遍再提交（CI 会跑 `alembic check`，改了模型没生成迁移会失败）。
 
@@ -58,12 +61,12 @@ cd ../web && pnpm gen:api     # 生成 src/shared/api/schema.d.ts
 
 ### 上线前自测
 
-用本机构建的生产镜像起全套服务（Caddy + server + postgres + minio + mailpit），只走 HTTP：
+用本机构建的生产镜像起全套服务（Caddy + server + converter + postgres + minio + mailpit），只走 HTTP：
 
 ```bash
 docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build
 # 打开 http://localhost:8080，验证码邮件在 http://localhost:8025
-cd web && pnpm e2e:stack      # 全栈 E2E：注册、保存到云端、重新打开、密码登录、删除账号
+cd web && pnpm e2e:stack      # 全栈 E2E：注册、保存到云端、重新打开、密码登录、删除账号、文件转 Markdown
 docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml down
 ```
 
@@ -81,10 +84,11 @@ pnpm add xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
 ## 部署
 
-服务器上只需要 Docker（带 compose 插件）。推送到 main 或者打 `v*` tag 后，GitHub Actions 会先跑完全部检查，再把 `web`、`server` 两个镜像推送到 GHCR：
+服务器上只需要 Docker（带 compose 插件）。推送到 main 或者打 `v*` tag 后，GitHub Actions 会先跑完全部检查，再把 `web`、`server`、`converter` 三个镜像推送到 GHCR：
 
 - `ghcr.io/jint2020/make-your-life-better-web`
 - `ghcr.io/jint2020/make-your-life-better-server`
+- `ghcr.io/jint2020/make-your-life-better-converter`
 
 GHCR 上的包默认是私有的。要么在包设置里改成公开，要么先在服务器上用有 `read:packages` 权限的 token 执行 `docker login ghcr.io`。
 
@@ -98,7 +102,7 @@ docker compose up -d
 ```
 
 - 域名要先解析到服务器，80/443 端口要放开，Caddy 会自动申请 HTTPS 证书
-- 只有 Caddy 对外；数据库和 MinIO 只在内部网络
+- 只有 Caddy 对外；数据库、MinIO 和 converter 只在内部网络（converter 不挂任何凭据，也不能访问外网）
 - 后端启动时会自动执行数据库迁移
 
 更新和回滚：改 `.env` 里的 `APP_VERSION`（`latest`、`sha-xxxxxxx` 或 `1.2.3`），然后 `docker compose pull && docker compose up -d`。
@@ -113,14 +117,16 @@ MinIO 用的是社区维护的分支 `pgsty/minio`（官方已经不再往 Docke
 
 ```
 docs/design.md          设计决策
-docker-compose.yml      生产部署（Caddy + server + postgres + minio）
-docker-compose.dev.yml  本机开发的依赖服务
+docker-compose.yml      生产部署（Caddy + server + converter + postgres + minio）
+docker-compose.dev.yml  本机开发的依赖服务（含 converter）
 docker-compose.local.yml  上线前自测（叠加在生产配置上）
 .github/workflows/      CI：检查 + 构建推送镜像
 server/                 后端（FastAPI）
-  app/                  应用代码：配置、数据表、会话、发信、对象存储
-    routes/             接口：health、auth（账号）、cloud（云端任务）
+  app/                  应用代码：配置、数据表、会话、发信、对象存储、频率限制
+    routes/             接口：health、auth（账号）、cloud（云端任务）、convert（文件转 Markdown）
   migrations/           Alembic 数据库迁移
+converter/              文件转 Markdown 服务（markitdown，无数据库、无凭据）
+  app/                  转换引擎、子进程隔离（超时 / 内存上限）、XLSX / CSV 流式转换
 web/                    前端（Vite 项目；Dockerfile + Caddyfile 打成 Caddy 镜像）
 web/src/
   app/                  应用外壳：路由、布局、首页、404
@@ -139,6 +145,8 @@ web/src/
       grid/             AG Grid 结果表
       components/       向导各步骤、配置抽屉、行详情、未参与对比的行
       sample/           示例文件生成（也用于 E2E 测试）
+    file-to-markdown/   工具二：文件转 Markdown（上传到 converter 转换，需登录）
+      state/            队列、校验、字符 / Token 统计（纯函数，含单测）
   tools.registry.ts     工具注册表
 ```
 

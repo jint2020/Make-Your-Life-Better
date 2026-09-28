@@ -3,10 +3,12 @@ import { ArrowRightIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useAuth } from '@/shared/auth/store'
 import { copy } from '@/shared/copy/zh'
 import { TOOLS } from '@/tools.registry'
 
 export function HomePage() {
+  const backendUnavailable = useAuth((s) => s.status === 'unavailable')
   return (
     <div className="mx-auto max-w-screen-xl px-4 py-10 sm:px-6 sm:py-14">
       <section className="mb-10 space-y-3">
@@ -32,8 +34,12 @@ export function HomePage() {
                   <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <tool.icon className="size-5" />
                   </span>
-                  {tool.status !== 'stable' && (
-                    <Badge variant="secondary">{copy.toolStatus[tool.status]}</Badge>
+                  {tool.requiresBackend && backendUnavailable ? (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      {copy.app.toolUnavailable}
+                    </Badge>
+                  ) : (
+                    tool.status !== 'stable' && <Badge variant="secondary">{copy.toolStatus[tool.status]}</Badge>
                   )}
                 </div>
                 <CardTitle className="flex items-center gap-1.5">

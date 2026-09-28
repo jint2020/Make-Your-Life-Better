@@ -3,6 +3,16 @@
 {$SITE_ADDRESS::80} {
 	encode zstd gzip
 
+	# 文件转 Markdown 的上传接口：在网关就拦掉超大的请求体（server 限 20 MiB + multipart 开销；
+	# 调大 CONVERT_MAX_FILE_BYTES 时要一起调大 CONVERT_BODY_LIMIT）。
+	# FastAPI 解析 multipart 在鉴权之前，不拦的话未登录的请求也能把大文件写进 server 的临时目录
+	handle /api/convert {
+		request_body {
+			max_size {$CONVERT_BODY_LIMIT:21MiB}
+		}
+		reverse_proxy {$API_UPSTREAM:server:8000}
+	}
+
 	handle /api/* {
 		reverse_proxy {$API_UPSTREAM:server:8000}
 	}

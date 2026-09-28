@@ -4,8 +4,10 @@
 连不上数据库时，本机跳过需要数据库的测试；CI 里（CI=true）直接失败。
 """
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -20,10 +22,17 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
+from app.converter import (  # noqa: E402
+    ConverterError,
+    ConverterUnavailable,
+    ConvertResult,
+    get_converter,
+)
 from app.db import get_engine  # noqa: E402
 from app.mailer import get_mailer  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Base  # noqa: E402
+from app.rate_limit import ConvertLimiter, get_limiter  # noqa: E402
 from app.storage import InMemoryObjectStore, get_object_store  # noqa: E402
 
 get_settings.cache_clear()
@@ -41,6 +50,43 @@ class FakeMailer:
 
     def last_code(self, to: str) -> str:
         return next(code for addr, code in reversed(self.sent) if addr == to)
+
+
+class FakeConverter:
+    """测试用：不转发给真的 converter 服务，按测试配置直接返回结果或抛错误。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+        self.result = ConvertResult(markdown="# 你好\n", warnings=[])
+        self.error_code: str | None = None
+        self.unavailable = False
+        # 测试并发限制用：设置后 convert() 会卡在这里，等测试主动放行
+        self.gate: asyncio.Event | None = None
+        self.started = asyncio.Event()
+
+    async def convert(self, ext: str, content: bytes) -> ConvertResult:
+        self.calls.append((ext, len(content)))
+        self.started.set()
+        if self.gate is not None:
+            await self.gate.wait()
+        if self.unavailable:
+            raise ConverterUnavailable
+        if self.error_code is not None:
+            raise ConverterError(self.error_code)
+        return self.result
+
+
+class FakeClock:
+    """测试用可控时钟，配合 ConvertLimiter 的滚动窗口测试，不用真的等一小时 / 一天。"""
+
+    def __init__(self) -> None:
+        self.now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, **kwargs: float) -> None:
+        self.now += timedelta(**kwargs)
 
 
 @pytest.fixture(scope="session")
@@ -85,10 +131,32 @@ def store() -> InMemoryObjectStore:
 
 
 @pytest.fixture
-async def client(mailer: FakeMailer, store: InMemoryObjectStore) -> AsyncIterator[AsyncClient]:
+def converter() -> FakeConverter:
+    return FakeConverter()
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def limiter(clock: FakeClock) -> ConvertLimiter:
+    return ConvertLimiter(clock=clock)
+
+
+@pytest.fixture
+async def client(
+    mailer: FakeMailer,
+    store: InMemoryObjectStore,
+    converter: FakeConverter,
+    limiter: ConvertLimiter,
+) -> AsyncIterator[AsyncClient]:
     app = create_app()
     app.dependency_overrides[get_mailer] = lambda: mailer
     app.dependency_overrides[get_object_store] = lambda: store
+    app.dependency_overrides[get_converter] = lambda: converter
+    app.dependency_overrides[get_limiter] = lambda: limiter
     # ASGITransport 不触发 lifespan，不需要真实的 MinIO
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
