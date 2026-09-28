@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { FileSpreadsheetIcon, type LucideIcon } from 'lucide-react'
+import { FileSpreadsheetIcon, FileTextIcon, type LucideIcon } from 'lucide-react'
 
 export type ToolStatus = 'new' | 'beta' | 'stable'
 
@@ -19,6 +19,11 @@ export interface ToolMeta {
   /** 首页搜索用 */
   keywords: string[]
   load: () => Promise<ToolModule>
+  /**
+   * 这个工具依赖后端才能用（目前只有"文件转 Markdown"）。后端不可用时，
+   * 首页卡片和顶部导航仍然照常显示，只是标"暂不可用"；不像账号/云端入口那样直接隐藏。
+   */
+  requiresBackend?: boolean
 }
 
 /**
@@ -34,6 +39,17 @@ export const TOOLS: ToolMeta[] = [
     status: 'beta',
     keywords: ['excel', 'csv', '对比', '比对', 'diff', '表格', 'vlookup'],
     load: () => import('@/features/excel-compare'),
+  },
+  {
+    id: 'file-to-markdown',
+    path: 'file-to-markdown',
+    name: '文件转 Markdown',
+    description: '把 PDF、Word、PPT、Excel 等文件转成 Markdown，方便交给 AI 使用。需要登录；文件会上传到服务器转换，转完立即删除。',
+    icon: FileTextIcon,
+    status: 'new',
+    keywords: ['markdown', 'md', 'pdf', 'word', 'docx', 'ppt', 'pptx', 'excel', '转换', 'ai', 'markitdown'],
+    requiresBackend: true,
+    load: () => import('@/features/file-to-markdown'),
   },
 ]
 

@@ -76,9 +76,26 @@ jobs:
       # 提交的 web/openapi.json 要和后端代码一致（改了接口要重新导出并 pnpm gen:api）
       - run: uv run python -m app.export_openapi > ../web/openapi.json && git diff --exit-code ../web/openapi.json
 
+  converter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: converter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          enable-cache: true
+          cache-dependency-glob: converter/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
   # 检查全部通过后才构建镜像；PR 只检查，不推送
   images:
-    needs: [web, server]
+    needs: [web, server, converter]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -86,7 +103,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        app: [web, server]
+        app: [web, server, converter]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

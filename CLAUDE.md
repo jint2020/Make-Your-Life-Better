@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A browser-based productivity toolkit ("Make Your Life Better"). The UI is Chinese-only, and so are the docs, comments and commit messages (`feat(excel-compare): …` style). Right now there is one tool: **Excel 数据对比** (`web/src/features/excel-compare`).
+A browser-based productivity toolkit ("Make Your Life Better"). The UI is Chinese-only, and so are the docs, comments and commit messages (`feat(excel-compare): …` style). Tools: **Excel 数据对比** (`web/src/features/excel-compare`) and **文件转 Markdown** (`web/src/features/file-to-markdown`).
 
-By default user data never leaves the machine: parsing and comparison always run in the browser. The backend (`docs/design.md` §三) only adds email accounts and opt-in "save to cloud" for tasks. The server stores data; it never parses or compares. Every tool must keep working when the user is logged out or the backend is down.
+By default user data never leaves the machine: parsing and comparison always run in the browser. The backend (`docs/design.md` §四) only adds email accounts and opt-in "save to cloud" for tasks; the server stores data and never parses or compares. **文件转 Markdown is the one exception** (`docs/design.md` §三): it requires login and uploads the file to the isolated `converter` service, which converts it with markitdown and deletes it right after. Every other tool must keep working when the user is logged out or the backend is down.
 
 Layout:
-- `web/` is the frontend, a standalone pnpm project. Its Dockerfile builds a Caddy image that serves `dist/` and proxies `/api/*` to `server:8000`.
-- `server/` is the FastAPI backend, a uv project.
+- `web/` is the frontend, a standalone pnpm project. Its Dockerfile builds a Caddy image that serves `dist/` and proxies `/api/*` to `server:8000` (with a request-body limit on `/api/convert`, `CONVERT_BODY_LIMIT`, default 21 MiB, because FastAPI parses multipart before auth).
+- `server/` is the FastAPI backend, a uv project. It also serves `/api/convert`: auth, size and extension checks and rate limits happen there, then the bytes are forwarded to the converter.
+- `converter/` is the markitdown conversion service, a uv project with no database, no credentials and no network beyond the compose `converter` network.
 - The repo root holds the compose files, `.github/workflows/ci.yml` and the docs.
 
 `docs/design.md` is the source of truth for product and design decisions, and it tracks implementation progress (已完成 / 待做). Update it **before** you change a design decision, and keep its progress section current.
@@ -40,6 +41,14 @@ uv run alembic upgrade head           # the container runs this on every start
 uv run alembic revision --autogenerate -m "说明"
 ```
 
+Converter: uv, Python 3.13, no database. Run from `converter/` (the dev compose starts it on :8001, and the server's default `CONVERTER_URL` points there).
+
+```bash
+uv run fastapi dev app/main.py        # :8001
+uv run pytest                         # fixtures are generated in code; no binaries are committed
+uv run ruff check . && uv run ruff format --check .
+```
+
 Full stack from production images (HTTP on :8080): `docker compose --env-file local-test.env -f docker-compose.yml -f docker-compose.local.yml up -d --build`.
 
 - If your shell has `NODE_ENV=development` (this cloud environment does), `pnpm build` bundles React's development build, which is much slower. Build with `NODE_ENV=production pnpm build` before measuring performance. The Playwright webServer already forces production, and the perf E2E asserts that no main-thread long task exceeds 250 ms.
@@ -61,19 +70,30 @@ Full stack from production images (HTTP on :8080): `docker compose --env-file lo
   - A session is a random token in an httpOnly cookie on `path=/api`; the DB stores only its SHA-256.
   - Rate limits, lockout and quota numbers all come from `Settings`.
 - Cloud tasks (`routes/cloud.py`): the task config (arbitrary JSON from the tool) goes in Postgres; the original files go in MinIO under `users/<uid>/tasks/<tid>/<fid>`. Downloads are streamed through the backend after an ownership check. The user row is locked while quota is checked.
+- File → Markdown (`routes/convert.py`): the only route that forwards file bytes to the `converter` service (`app/converter.py`, `CONVERTER_URL`). Login required; the 20 MiB limit and the extension whitelist are enforced before forwarding. Per-user limits (1 in flight, 60/hour, 300/day rolling windows) and a global in-flight cap (`CONVERT_MAX_IN_FLIGHT`, default 10) live in process memory (`rate_limit.py`) — the server is single-process; move them to the DB if it ever goes multi-process. Files are never logged, stored or persisted; the log line carries only ext/size/duration/outcome. `/api/health/ready` deliberately does not check the converter.
 - The mailer and object store are FastAPI dependencies (`get_mailer`, `get_object_store`); tests override them with `FakeMailer` and `InMemoryObjectStore`.
 - Tests run against a real Postgres database `mylb_test`, created and truncated by `tests/conftest.py`. Without a DB they skip locally but fail in CI. They use httpx `ASGITransport`, so the app lifespan does not run.
 - `Settings` has `env_ignore_empty=True`, because compose passes unset `${VAR:-}` values as empty strings.
 
 **API contract.** `web/openapi.json` is exported from the server (`uv run python -m app.export_openapi > ../web/openapi.json`), and `pnpm gen:api` turns it into `web/src/shared/api/schema.d.ts`. Call the API through the typed `openapi-fetch` client in `web/src/shared/api/client.ts`. CI fails if either generated file is stale. Operation IDs are set explicitly on every route.
 
-**CI.** On PRs, `ci.yml` only runs checks: web lint, typecheck, test and e2e; server ruff, pytest, `alembic upgrade head` + `alembic check` against Postgres, and the OpenAPI drift check. The full-stack E2E (`web/e2e-stack`, `pnpm e2e:stack`) is not in CI; run it locally against the compose stack, where it reads login codes from Mailpit's API. On pushes to main and `v*` tags, once the checks pass it also pushes `ghcr.io/jint2020/make-your-life-better-{web,server}`, tagged `latest` / `sha-xxxxxxx` / semver.
+**Converter (`converter/app/`).** Internal service, no `/api` prefix: `GET /health` (503 until warm-up finishes) and `POST /convert?ext=<ext>` with the raw file bytes as the body. markitdown 0.1.8, pinned; Debian slim base (onnxruntime has no musllinux wheels — no Alpine).
+- `engine.py` builds one `MarkItDown(enable_builtins=False)` and registers only the whitelisted converters: markitdown's PDF/DOCX/PPTX/HTML/EPUB plus our own streaming XLSX/CSV converters (`xlsx_converter.py`, `csv_converter.py`, MAX_CELLS budget with a truncation note). **Never** register the ZIP converter (markitdown recurses into nested archives with no limits) or anything network-bound; markitdown sniffs content, so an unregistered type must fail, not fall through.
+- Each conversion runs in a forked child (forkserver preloads the heavy imports but constructs `MarkItDown`/`Magika` only inside the child — forking a threaded onnxruntime process deadlocks). The parent SIGKILLs on timeout or RSS cap and classifies the outcome into the seven error codes the server maps to Chinese messages. The result comes back over a one-way pipe whose write end the parent closes right after `start()`, so a child that dies mid-send reads as EOF (crashed) instead of hanging the parent — don't switch back to `multiprocessing.Queue`.
+- `postprocess.py` replaces embedded images with `[图片]` placeholders, detects no-text output and counts `(cid:N)` glyphs.
+- The container runs read-only with a tmpfs `/tmp`, no credentials, and only the compose `converter` network. Don't add env vars that carry secrets.
+
+**CI.** On PRs, `ci.yml` only runs checks: web lint, typecheck, test and e2e; server ruff, pytest, `alembic upgrade head` + `alembic check` against Postgres, and the OpenAPI drift check; converter ruff and pytest. The full-stack E2E (`web/e2e-stack`, `pnpm e2e:stack`) is not in CI; run it locally against the compose stack, where it reads login codes from Mailpit's API. On pushes to main and `v*` tags, once the checks pass it also pushes `ghcr.io/jint2020/make-your-life-better-{web,server,converter}`, tagged `latest` / `sha-xxxxxxx` / semver.
 
 **Frontend.** All paths below are relative to `web/`.
 
 **Tool registry → lazy routes.** `src/tools.registry.ts` is the single list of tools (`ToolMeta` with `load: () => import(...)`). The home page cards, the top navigation and the lazy routes in `src/app/router.tsx` are all generated from it. To add a tool:
 1. Create `src/features/<id>/index.ts` and have it export `Component`.
 2. Add a registry entry.
+
+`ToolMeta.requiresBackend` marks tools that need the server (currently only 文件转 Markdown). With auth `unavailable`, such tools stay visible but badged 暂不可用 and explain why on their page; every other tool keeps working.
+
+**文件转 Markdown (`src/features/file-to-markdown/`).** Files are uploaded one at a time over `/api/convert` (sequential queue in `state/store.ts`; `File` objects are kept in a module-level map for retry). Results live only in memory — no local history, no cloud save — and a `beforeunload` guard asks before losing them. Validation, character/token counts and queue helpers are pure functions in `state/` with unit tests. The preview caps at 200k characters; copy/download always use the full text.
 
 **Shared layer (`src/shared/`):**
 - `worker/createWorkerClient.ts` is a Comlink wrapper. It creates the worker lazily and recreates it after a crash (for example OOM).

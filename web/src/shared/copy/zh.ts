@@ -6,7 +6,7 @@ export const copy = {
     name: 'Make Your Life Better',
     shortName: 'MYLB',
     tagline: '浏览器里的提效小工具，打开就能用',
-    privacy: '数据默认只在你的浏览器里处理和保存。登录后可以选择把任务保存到云端。',
+    privacy: '数据默认只在你的浏览器里处理和保存（需要上传到服务器的工具会单独注明）。登录后可以选择把任务保存到云端。',
     home: '首页',
     allTools: '全部工具',
     notFoundTitle: '页面不存在',
@@ -16,6 +16,8 @@ export const copy = {
     errorBody: '加载这个页面时出现问题，可以刷新重试。',
     reload: '刷新',
     loading: '加载中…',
+    /** 依赖后端的工具（目前只有"文件转 Markdown"），后端不可用时首页卡片和导航上的标记 */
+    toolUnavailable: '暂不可用',
   },
   toolStatus: {
     new: '新',

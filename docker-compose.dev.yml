@@ -2,6 +2,9 @@
 #   docker compose -f docker-compose.dev.yml up -d
 #   cd server && uv run fastapi dev app/main.py
 #   cd web && pnpm dev
+#
+# converter 也在这里起（本机构建），本机跑的 server 通过 http://localhost:8001 访问；
+# server 默认的 CONVERTER_URL 已经指向这个地址，不用另外设置。
 name: mylb-dev
 
 services:
@@ -43,6 +46,18 @@ services:
     ports:
       - "1025:1025" # SMTP
       - "8025:8025" # 收件箱网页：http://localhost:8025
+
+  converter:
+    build: ./converter
+    ports:
+      - "8001:8001" # 本机跑的 server 通过 http://localhost:8001 访问
+    healthcheck:
+      # 启动时要先转一个样例预热（约 13 秒），预热完才算健康，所以 start_period 给得宽松
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
 volumes:
   postgres_data:

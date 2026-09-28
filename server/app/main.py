@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
 
 from .config import get_settings
-from .routes import auth, cloud, health
+from .routes import auth, cloud, convert, health
 from .storage import ensure_bucket
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(cloud.router, prefix="/api")
+    app.include_router(convert.router, prefix="/api")
     return app
 
 

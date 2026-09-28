@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Link, NavLink, Outlet, useNavigation } from 'react-router'
 import { SparklesIcon } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/shared/auth/store'
 import { copy } from '@/shared/copy/zh'
@@ -13,6 +14,7 @@ export function AppShell() {
   const navigation = useNavigation()
   const isLoading = navigation.state === 'loading'
   const refreshAuth = useAuth((s) => s.refresh)
+  const backendUnavailable = useAuth((s) => s.status === 'unavailable')
 
   useEffect(() => {
     void refreshAuth()
@@ -51,6 +53,11 @@ export function AppShell() {
               >
                 <tool.icon className="size-4" />
                 {tool.name}
+                {tool.requiresBackend && backendUnavailable && (
+                  <Badge variant="outline" className="px-1.5 py-0 text-[10px] text-muted-foreground">
+                    {copy.app.toolUnavailable}
+                  </Badge>
+                )}
               </NavLink>
             ))}
           </nav>
